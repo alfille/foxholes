@@ -1,0 +1,32 @@
+body {
+    background: blue;
+}
+header {
+    background: lightblue;
+}
+header div {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+}
+#control {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: left;
+}
+table {
+    background: lightgrey;
+    width: 100%;
+}
+caption {
+    color: white;
+}
+table, th,td {
+    border: 1px solid black;
+    border-collapse: collapse;
+}
+td {
+    text-align: center;
+}
