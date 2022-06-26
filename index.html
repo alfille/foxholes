@@ -19,9 +19,9 @@
                 </div>
                 <div id="control">
                     <label>Choose number of &#129418 holes: <input type="number" id="holes" min=3 max=12 step=1 value=5 onchange="changeInput()" title="Choose number of foxholes"></label>
+                    <label>Show probabilities: <input type="checkbox" id="stats" onchange="T.statchange()"></label>
                     <fieldset>
                         <legend>Status</legend>
-                        <label>Possible hideouts: <input type=text size=2 readonly id="hideouts"></label><br>
                         <label>Foxholes raided: <input type=text size=2 readonly id="raided"></label>
                     </fieldset>
                     <button type="button" onclick="T.start()">Reset game</button>

@@ -49,8 +49,26 @@ class Game {
         this.inspections = [];
         this.date = 0;
         let current_fox = Array(H.value).fill(true);
+        let current_stats = Array(H.value).fill( 1. / H.value );
         this.fox_history = [current_fox] ;
+        this.stats_history = [current_stats];
         this.inspections = [] ;
+    }
+
+    left(i) {
+        if ( i==0 ) {
+            return 1;
+        } else {
+            return i-1;
+        }
+    }
+
+    right(i) {
+        if ( i == H.value-1 ) {
+            return H.value - 2;
+        } else {
+            return i+1;
+        }
     }
 
     move( hole ) {
@@ -58,22 +76,29 @@ class Game {
         this.inspections[this.date] = hole ;
         this.date += 1;
         // use previous fox locations
-        let old_locations = this.fox_history[this.date-1] ;
+        let old_locations = this.fox_history[this.date-1].slice() ;
+        let old_stats = this.stats_history[this.date-1].slice() ;
         // exclude inspected hole
         old_locations[hole] = false ;
-        // sneak left
-        let current_fox = old_locations.slice(1) ;
-        current_fox[H.value-1] = false;
-        // sneak right
-        for ( let h = 0 ; h < H.value-1 ; ++h ) {
-            current_fox[h+1] ||= old_locations[h] ;
+        old_stats[hole] = 0. ;
+
+        let current_fox = [] ;
+        let current_stats = [] ;
+        for ( let h = 0 ; h < H.value ; ++h ) {
+            current_fox[h] = old_locations[this.left(h)] || old_locations[this.right(h)] ;
+            current_stats[h] = old_stats[this.left(h)]*.5 + old_stats[this.right(h)]*.5 ;
         }
         // store
         this.fox_history[this.date] = current_fox;
+        this.stats_history[this.date] = current_stats;
     }
 
     get foxes() {
         return this.fox_history[this.date] ;
+    }
+
+    get stats() {
+        return this.stats_history[this.date] ;
     }
 
     get prior() {
@@ -99,7 +124,32 @@ class Table {
         this.table = document.querySelector("table") ;
         this.thead = document.querySelector("thead") ;
         this.tbody = document.querySelector("tbody") ;
+        this.stats = false;
         this.start() ;
+    }
+
+    stats_row() {
+        let r = document.createElement("tr");
+        let h = document.createElement("th");
+        h.innerText = "Probability" ;
+        r.appendChild(h) ;
+        for ( let i = 1 ; i <= H.value ; ++i ) {
+            h = document.createElement("th");
+            r.appendChild(h) ;
+        }
+        this.thead.insertBefore(r,this.thead.firstElementChild);
+    }
+
+    statchange() {
+        let s = this.stats ;
+        this.stats = document.getElementById("stats").checked ;
+        if (s == this.stats ) {
+        } else if ( this.stats ) {
+            this.stats_row() ;
+            this.update() ;
+        } else {
+            this.thead.removeChild(this.thead.firstElementChild);
+        }
     }
 
     start() {
@@ -107,6 +157,7 @@ class Table {
         G.start();
         this.tbody.innerHTML = "";
         this.control_row();
+        this.update();
     }
 
     control_row() {
@@ -133,14 +184,26 @@ class Table {
     }
 
     back() {
-        if ( G.day == 0 ) {
+        console.log(G.day);
+        if ( G.day < 2 ) {
             this.start() ;
+        } else {
+            this.remove_row();
+            this.remove_row();
+            G.back();
+            this.control_row();
         }
-        this.remove_row();
-        this.remove_row();
-        G.back();
-        this.control_row();
+        this.update();
     }
+
+    update() {
+        document.getElementById("raided").value=G.day;
+        if ( this.stats ) {
+            let p = this.thead.firstElementChild.childNodes;
+            G.stats.forEach( (v,i) => p[i+1].innerText = v.toFixed(3) );
+        }
+    }
+        
 
     move(hole) { // hole 0-based
         G.move(hole);
@@ -151,6 +214,7 @@ class Table {
         } else {
             this.control_row();
         }
+        this.update();
     }
 
     static_row() {
