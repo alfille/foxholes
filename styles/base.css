@@ -10,6 +10,14 @@ header div {
     flex-wrap: nowrap;
     justify-content: space-between;
 }
+header button {
+    background: lightgrey;
+    color: red;
+    width: 70%;
+    border: 3px solid blue;
+    border-radius: 4px;
+    margin: 2px;
+}
 #control {
     display: flex;
     flex-direction: column;

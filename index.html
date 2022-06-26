@@ -18,12 +18,13 @@
                     <a href='https://github.com/alfille/foxholes'><img src="images/icon.png"></a>
                 </div>
                 <div id="control">
-                    <label>Number of &#129418 holes: <input type="number" id="holes" min=3 max=12 step=1 value=5 onchange="changeInput()" title="Choose number of foxholes"></label>
+                    <label>Choose number of &#129418 holes: <input type="number" id="holes" min=3 max=12 step=1 value=5 onchange="changeInput()" title="Choose number of foxholes"></label>
                     <fieldset>
-                        <legend>Game Type</legend>
-                        <label>Move at night<input type="radio" id="turns" name="gametype" onchange="changeInput()" title="Take turns moving"></label>
-                        <label>Sneak past<input type="radio" id="sneak" name="gametype" onchange="changeInput()"     title="Move simultaneously" checked></label>
+                        <legend>Status</legend>
+                        <label>Possible hideouts: <input type=text size=2 readonly id="hideouts"></label><br>
+                        <label>Foxholes raided: <input type=text size=2 readonly id="raided"></label>
                     </fieldset>
+                    <button type="button" onclick="T.start()">Reset game</button>
                 </div>
             </div>
         </header>
@@ -32,23 +33,8 @@
                 Foxhole game play
             </caption>
             <thead>
-            <tr>
-                <th>Day</th>
-                <th>Hole 1</th>
-                <th>Hole 2</th>
-            </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>0</td>
-                    <td>&#129418</td>
-                    <td>&#129418</td>
-                </tr>
-                <tr>
-                    <td>Search</td>
-                    <td><input type="radio" name="S0"></td>
-                    <td><input type="radio" name="S0"></td>
-                </tr>
             </tbody>
             </table>
         <!-- scripts -->

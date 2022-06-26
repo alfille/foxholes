@@ -4,12 +4,13 @@
 
 class Holes {
     constructor() {
+        this.item = document.getElementById("holes");
         this.read();
     }
 
     read() {
         // get Number of holes from input field
-        let n = parseInt(document.getElementById("holes").value);
+        let n = parseInt(this.item.value);
         let update = true ;
         if (n<1) {
             // bad input
@@ -22,48 +23,26 @@ class Holes {
             update = false;
         }
         if (update) {
-            document.getElementById("holes").value=n;
+            this.item.value=n;
         }
         this.holes = n;
+    }
+
+    get change() {
+        let h = this.holes ;
+        this.read();
+        return ( h != this.holes ) ;
     }
 
     get value() {
         return this.holes;
     }
-
-    change() {
-        let h = this.holes ;
-        this.read();
-        return ( h != this.holes ) ;
-    }
 }
 var H = new Holes() ;
 
-class Gametype {
-    constructor() {
-        this.ids = ["turns","sneak"].map( e=>document.getElementById(e) );
-        this.read();
-    }
-
-    read() {
-        // get Game type from input field(s)
-        this.gametype = this.ids.filter(i=>i.checked)[0].id ;
-    }
-
-    get value() {
-        return this.gametype ;
-    }
-
-    change() {
-        let g = this.gametype ;
-        this.read();
-        return ( g != this.gametype ) ;
-    }
-}
-var G = new Gametype() ;
-
-class SneakGame {
+class Game {
     constructor () {
+        this.start();
     }
 
     start () {
@@ -71,31 +50,34 @@ class SneakGame {
         this.date = 0;
         let current_fox = Array(H.value).fill(true);
         this.fox_history = [current_fox] ;
+        this.inspections = [] ;
     }
 
-    next( hole ) {
+    move( hole ) {
         // inspections are 0-based
-        this.date += 1;
         this.inspections[this.date] = hole ;
+        this.date += 1;
         // use previous fox locations
         let old_locations = this.fox_history[this.date-1] ;
         // exclude inspected hole
         old_locations[hole] = false ;
         // sneak left
         let current_fox = old_locations.slice(1) ;
-        current[H.value-1] = false;
+        current_fox[H.value-1] = false;
         // sneak right
         for ( let h = 0 ; h < H.value-1 ; ++h ) {
-            current_fox[h] |= old_locations[h+1] ;
+            current_fox[h+1] ||= old_locations[h] ;
         }
-        // exclude inspected hole
-        current_fox[hole] = false ;
         // store
         this.fox_history[this.date] = current_fox;
     }
 
     get foxes() {
         return this.fox_history[this.date] ;
+    }
+
+    get prior() {
+        return [this.inspections[this.date-1],this.fox_history[this.date-1]];
     }
 
     back() { // backup a move
@@ -105,34 +87,98 @@ class SneakGame {
     get number() { // of foxes left
         return this.fox_history[this.date].filter(f=>f).length ;
     }
-}
 
+    get day() {
+        return this.date;
+    }
+}
+var G = new Game();
 
 class Table {
     constructor() {
         this.table = document.querySelector("table") ;
         this.thead = document.querySelector("thead") ;
         this.tbody = document.querySelector("tbody") ;
-        this.day = 0 ;
-        this.clear() ;
+        this.start() ;
     }
 
-    clear() {
-        this.day = 0;
-        this.inspect = [];
+    start() {
         this.header();
-        this.backbutton();
+        G.start();
+        this.tbody.innerHTML = "";
+        this.control_row();
     }
 
-    backbutton() {
+    control_row() {
+        let f = G.foxes ;
         let r = document.createElement("tr");
+        for ( let i = 0; i <= H.value ; ++i ) {
+            let d = document.createElement("td");
+            if ( i==0 ) {
+                let b = document.createElement("button");
+                b.innerText = "Back" ;
+                b.onclick = () => T.back() ;
+                d.appendChild(b);
+            } else {
+                d.innerHTML = (f[i-1] ? "&#129418" : "&nbsp;") + "<br>" ;
+                let b = document.createElement("button");
+                b.innerText = "?" ;
+                b.onclick = () => T.move(i-1) ;
+                d.appendChild(b);
+            }
+            r.appendChild(d);
+        }
         let d = document.createElement("td");
-        let b = document.createElement("button");
-        b.innerText = "Back" ;
-        d.appendChild(b);
-        r.appendChild(d);
         this.tbody.appendChild(r);
-        return r;
+    }
+
+    back() {
+        if ( G.day == 0 ) {
+            this.start() ;
+        }
+        this.remove_row();
+        this.remove_row();
+        G.back();
+        this.control_row();
+    }
+
+    move(hole) { // hole 0-based
+        G.move(hole);
+        this.remove_row();
+        this.static_row();
+        if ( G.number == 0 ) {
+            this.victory_row();
+        } else {
+            this.control_row();
+        }
+    }
+
+    static_row() {
+        let [m,f] = G.prior ;
+        let r = document.createElement("tr");
+        for ( let i = 0; i <= H.value ; ++i ) {
+            let h = i-1; // actual hole index after first column
+            let d = document.createElement("td");
+            if ( i==0 ) {
+                d.innerHTML = `Day ${G.day-1}`;
+            } else if ( m == h ) {
+                d.innerHTML = "&#x274c" ;
+            } else if (f[h]) {
+                d.innerHTML = "&#129418" ;
+            } else {
+                d.innerHTML = "&nbsp;" ;
+            }
+            r.appendChild(d);
+        }
+        let d = document.createElement("td");
+        this.tbody.appendChild(r);
+    }
+
+    remove_row() {
+        this.tbody.removeChild( this.tbody.lastChild ) ;
+    }
+
+    victory_row() {
     }
 
     header() {
@@ -148,31 +194,13 @@ class Table {
         }
         this.thead.appendChild(r) ;
     }
-
     
-
-    row() {
-        if ( this.day == 0 ) {}
-    }
-
-    Tset() {
-        // get Number of holes from input field
-        let n = parseInt(document.getElementById("holes").value);
-        if (n<1) {
-            // bad input
-            n = 5 ;
-            document.getElementById("holes").value=n;
-        }
-        this.holes = n;
-
-        // get game type from input field
-    }
 }
 var T = new Table();            
 
 function changeInput() {
-    if ( G.change || H.change ) {
-        T.Tset() ;
+    if ( H.change ) {
+        T.start() ;
     }
 }
 
