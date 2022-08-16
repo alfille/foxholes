@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <malloc.h>
 #include <unistd.h>
+#include <string.h>
 
 /*
  * Foxhole solver for <= 32 holes
@@ -10,9 +11,16 @@
  *
  * c 2022 Paul H Alfille
  * MIT license
+ *
+ * Find best solution
+ * 
  * */
 
 typedef uint32_t Bits;
+Bits Game_none = 0; // no foxes
+
+Bits * Possible = NULL ;
+int iPossible ;
 
 typedef int Move ;
 
@@ -25,7 +33,7 @@ int visits = 1;
 int update = 0 ;
 int offset = 0 ;
 int circle = 0 ;
-int maxday = 1000000;
+int maxday = 1000000 ;
 int searchCount = 0 ;
 
 #define maxbits 32
@@ -96,7 +104,6 @@ Bits * Gamespace = NULL; // bitmap of all possible game states
 
 void makeGamespace() {
     Bits power2 = 0 ; // to figure number of possible games 
-    int i ;
 
     setB( power2, holes ) ; // 2^^holes
     Gamespace = ( Bits *) malloc( power2 * sizeof(Bits) ) ;
@@ -104,7 +111,7 @@ void makeGamespace() {
         fprintf( stderr, "Memory exhausted -- games\n" );
         exit(1);
     }
-    for ( i=0 ; i<power2 ; ++i ) {
+    for ( int i=0 ; i<power2 ; ++i ) {
         Gamespace[i] = 0 ;
     }
 }
@@ -119,8 +126,7 @@ Bits * Jumpspace = NULL ; // bitmap for moves from a hold indexed by that hole
 
 void makeJumpspace() {
     // make a bitmap of move-to location for each current location
-    int x,y; // indexes
-    Move i ;
+
     // make space for the array 
     Jumpspace = (Bits *) malloc( holes * sizeof(Bits) ); // small
 
@@ -139,8 +145,8 @@ void makeJumpspace() {
      * */
         
     // loop though for all current locations
-    for ( y=0 ; y<ylength ; ++y ) { // vertical
-        for ( x=0 ; x<xlength ; ++x ) { // horizontal
+    for ( int y=0 ; y<ylength ; ++y ) { // vertical
+        for ( int x=0 ; x<xlength ; ++x ) { // horizontal
             Bits * J = &Jumpspace[x + xlength*y] ; // bitmap to be constructed
             *J = 0 ; // clear it first
             if ( circle ) { // circle geometry -- right/left wraps around
@@ -219,15 +225,22 @@ void makeJumpspace() {
 }
         
 void showBits( Bits bb ) {
-    int x,y;
-    for ( y=0 ; y<ylength ; ++y ) {
-        for ( x=0 ; x<xlength ; ++x ) {
+    for ( int y=0 ; y<ylength ; ++y ) {
+        for ( int x=0 ; x<xlength ; ++x ) {
             printf( getB( bb, I(x,y) ) ? "X|":" |" ) ;
         }
         printf("\n");
     }
 }
-    
+
+#define storeSize 1000000
+Bits Tries[storeSize]; // fixed size array holding intermediate game states
+
+int oldNum;
+int newIndex;
+int maxIndex;
+int Day ;
+
 typedef enum {
     won, // all foxes caught
     lost, // no more moves
@@ -236,53 +249,16 @@ typedef enum {
     backward, // go back a day
 } searchState ;
 
-struct movestate {
-    int allocated ;
-    Bits * games ;
-    Move * list ;
-} moveState ;
+searchState calcMove( Bits move, int iold, Bits * new_game ) {
+    struct Intermediate {
+        Bits game ;
+        Bits moves[ poison>1 ? poison-1 : 0 ] ;
+    } ;
 
-void enlargeMovestate(void) {
-    moveState.allocated += 1000 ;
-    moveState.list = (Move *) realloc( moveState.list, moveState.allocated*visits*sizeof(Move) ) ;
-    if ( moveState.list == NULL ) {
-        fprintf( stderr, "Memory exhausted -- moves\n" );
-        exit(1);
-    }
-    moveState.games = (Bits *) realloc( moveState.games, moveState.allocated*sizeof(Bits) ) ;
-    if ( moveState.games == NULL ) {
-        fprintf( stderr, "Memory exhausted -- gamelist\n" );
-        exit(1);
-    }
-}
+    typedef struct Intermediate * pInter ;
+    pInter T = (pInter) Tries ;
 
-void makeMovestate(void) {
-    int h;
-
-    moveState.list = NULL ;
-    moveState.games = NULL ;
-    moveState.allocated = 0 ;
-    enlargeMovestate() ;
-
-    // initial game position (all foxes)
-    for ( h=0 ; h<holes ; ++h ) {
-        setB( moveState.games[0], h ) ;
-    }
-    setBit( Gamespace, moveState.games[0] ) ;
-}
-
-searchState calcMove( int day ) {
-    Bits thisGame = moveState.games[day] ; // current fox locations
-    Bits nextGame = 0 ; // assume no foxes
-
-    int i;
-    int liststart = day*visits;
-    int listend = liststart + visits;
-
-    int poison_start = listend - (poison)*visits;
-    if (poison_start<0) {
-        poison_start = 0 ;
-    }
+    Bits thisGame = T[iold].game ; // current fox locations
 
     if ( update ) {
         ++searchCount ;
@@ -292,99 +268,186 @@ searchState calcMove( int day ) {
     }
 
     // clear moves
-    for ( i=liststart ; i<listend ; ++i ) {
-        clearB( thisGame, moveState.list[i] ) ;
-    }
+    thisGame &= ~move ;
+
     // calculate where they jump to
-    for ( i=0 ; i<holes ; ++i ) {
+    *new_game = Game_none ;
+    for ( int i=0 ; i<holes ; ++i ) {
         if ( getB( thisGame, i ) ) { // fox currently
-            nextGame |= Jumpspace[i] ; // jumps to here
+             *new_game|= Jumpspace[i] ; // jumps to here
         }
-    }
-    // clear poisoned holes
-    for ( i=poison_start ; i<listend ; ++i ) {
-        clearB( nextGame, moveState.list[i] ) ;
     }
 
-    // Victory? (No foxes)
-    if ( nextGame==0 ) {
-        int j,d;
-        printf("Victory on day %d. Moves:\n",day);
-        for ( d=0 ; d<=day ; ++d ) {
-            printf("\n");
-            showBits( moveState.games[d]);
-            for( j = 0 ; j < visits ; ++j ) {
-                printf("%d ",moveState.list[d*visits+j]);
-            }                
-            printf("\n");
+    // do poisoning
+    if ( poison > 1 ) { // any?
+        *new_game &= ~move ; // today
+        for ( int p = 1 ; p<poison ; ++p ) { // maybe past days?
+            *new_game &= ~T[iold].moves[p-1] ;
         }
+    }
+
+/*
+    printf("Day %d:\n",Day);
+    printf("\tGame coming in:\n");
+    showBits(game);
+    printf("\tMoves:\n");
+    showBits(move);
+//    printf("\tGame minus moves:\n");
+//    showBits(thisGame);
+    printf("\tResult:\n");
+    showBits(*new_game);
+*/
+
+    // Victory? (No foxes)
+    if ( *new_game==Game_none ) {
         return won ;
     }
 
     // Already seen?
-    if ( getBit( Gamespace, nextGame ) == 1 ) {
+    if ( getBit( Gamespace, *new_game ) == 1 ) {
         // game configuration already seen
         return retry ; // means try another move
     }
     
     // Valid new game, continue further
-    moveState.games[day+1] = nextGame;
-    setBit( Gamespace, nextGame ) ; // flag this configuration
+    setBit( Gamespace, *new_game ) ; // flag this configuration
     return forward ;
 }
 
-searchState searchDay( int day ) {
-    int v ;
-    Move * move = & moveState.list[day*visits] ;
-    
-    if ( day > maxday ) {
-        return backward;
-    }
+searchState dayPass( void ) {
+    struct Intermediate {
+        Bits game ;
+        Bits moves[ poison>1 ? poison-1 : 0 ] ;
+    } ;
 
-    // next day
-    if ( moveState.allocated - day < 5 ) {
-        enlargeMovestate() ;
+    typedef struct Intermediate * pInter ;
+    pInter T = (pInter) Tries ;
+
+    // T array has <old> then <new>
+    // but first need to move new into old
+    memmove( &T[0] , &T[oldNum] , sizeof( struct Intermediate ) * ( newIndex - oldNum ) ) ;
+    oldNum = newIndex - oldNum ;
+    newIndex = oldNum ; 
+
+    ++Day;
+    if ( Day > maxday ) {
+        printf( "Exceeded %d days.\n",maxday ) ;
+        return lost ;
     }
     
-
-    // set up initial move sequence
-    for ( v=0 ; v<visits ; ++v ) {
-        move[v]=v ;
-    }
-    do {
-        switch( calcMove(day) ) {
-            case won:
-                return won;
-                break ;
-            case retry:
-                break ;
-            case forward:
-                switch ( searchDay(day+1) ) {
-                    case won:
-                        return won;
-                        break ;
-                    case backward:
-                        break ;
-                }
-                break ;
+    for ( int iold=0 ; iold<oldNum ; ++iold ) { // each possible position
+        for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
+            Bits newT ;
+            switch( calcMove( Possible[ip], iold, &newT ) ) {
+                case won:
+                    return won;
+                case forward:
+                    // Add this game state to the furture evaluation list
+                    T[newIndex].game = newT ;
+                    if ( poison > 1 ) { // update poison list
+                        for ( int p=poison-2 ; p>0 ; --p ) {
+                            T[newIndex].moves[p] = T[iold].moves[p-1] ;
+                        }
+                        T[newIndex].moves[0] = Possible[ip] ;
+                    }
+                    newIndex++ ;
+                    if ( newIndex > maxIndex ) {
+                        printf("Too large a solution space\n");
+                        return lost ;
+                    }
+                    break ;
+                default:
+                    break ;
+            }
         }
-        // increment move starting from last position
-        for ( v=visits-1 ; v>-1 ; --v ) {
-            ++move[v] ;
-            if ( move[v] < holes + visits - v -1 ) {
-                // good value, place remaining moves immediately after
-                int vv ;
-                for ( vv=v+1 ; vv < holes ; ++vv ) {
-                    move[vv] = move[vv-1]+1 ;
-                }
-                break ;                
-            }
-            if ( v==0 ) {
-                return backward ;
-            }
+    }
+    return newIndex>0 ? forward : lost ;
+}
+    
+searchState startDays( void ) {
+
+    // Set up arrays of game states
+    //  will evaluate all states for each day for all moves and add to next day if unique
+
+    struct Intermediate {
+        Bits game ;
+        Bits moves[ poison>1 ? poison-1 : 0 ] ;
+    } ;
+
+    newIndex = 0 ;
+    oldNum = 0 ;
+    maxIndex = storeSize / sizeof( struct Intermediate ) ;
+    typedef struct Intermediate * pInter ;
+    pInter T = (pInter) Tries ;
+
+    for ( int h ; h<holes ; ++h ) {
+        setB( T[newIndex].game, h ); // all holes have foxes initially
+    }
+    for ( int p=0 ; p<poison-1 ; ++p ) {
+        T[newIndex].moves[p] = 0 ; // no prior moves
+    }
+    setBit( Gamespace, T[newIndex].game ) ; // flag this configuration
+    ++newIndex ;
+    
+    Day = 0 ;
+    do {
+        printf("Day %d, States: %d, Moves %d\n",Day+1,newIndex,iPossible);
+        switch ( dayPass() ) {
+            case won:
+                printf("Victory in %d days!\n",Day+1 ) ; // 0 index
+                return won ;
+            case lost:
+                printf("No solution despite %d days\n",Day );
+                return lost ;
+            default:
+                break ;
         }
     } while(1) ;
 }
+
+int setPscan( int index, int start, int level, Bits pattern ) {
+    // index into Possible (list of moves)
+    // start hole to start current level with
+    // level visit number (visits down to 1)
+    // pattern bitmap pattern to this point
+    for ( int h=start ; h<holes-level+1 ; ++h ) { // scan through positions for this visit
+        Bits P = pattern ;
+        setB( P, h );
+        if ( level==1 ) { // last visit, put in array and increment index
+            Possible[index] = P;
+            ++index;
+        } else { // recurse into futher visits
+            index = setPscan( index, h+1, level-1, P );
+        }
+    }
+    return index;
+}
+
+Bits * makePossible( void ) {
+    uint64_t top,bot;
+    int v = visits ;
+
+    // calculate iPossible (Binomial coefficient holes,visits)
+    if (v>holes/2) {
+        v = holes-visits ;
+    }
+    top = 1;
+    bot = 1;
+    for ( int i=v ; i>0 ; --i ) {
+        top *= holes+1-i ;
+        bot *= i ;
+    }
+    iPossible = top / bot ;
+    Possible = (Bits *) malloc( iPossible*sizeof(Bits) ) ;
+    if ( Possible==NULL) {
+        fprintf(stderr,"Memory exhausted move array\n");
+        exit(1);
+    }
+
+    // recursive fill of Possible
+    setPscan( 0, 0, visits, Game_none );
+}
+    
 
 int main( int argc, char **argv )
 {
@@ -471,27 +534,22 @@ int main( int argc, char **argv )
         visits = holes ;
     }
 
-    printStatus();
+    printStatus();    
 
     if ( update ) {
         printf("Setting up moves\n");
     }
-    makeJumpspace();
+    makeJumpspace(); // array of fox jump locations
+
     if ( update ) {
         printf("Setting up game array\n");
     }
-    makeGamespace();
+    makeGamespace(); // bitmap of game layouts (to avoid revisiting)
+
     if ( update ) {
         printf("Starting search\n");
     }
-    makeMovestate();
+    makePossible(); // array of moves
 
-    switch ( searchDay(0) ) {
-        case backward:
-            printf("No good moves\n");
-            break ;
-        case won:
-            printf("Victory!\n");
-            break ;
-    }
+    startDays() ; // start searching through days until a solution is found (will be fastest by definition)
 }
