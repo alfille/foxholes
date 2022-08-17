@@ -47,21 +47,21 @@ int searchCount = 0 ;
 
 //single word
 
-#define setB( map, b ) map |= (1 << b)
-#define clearB( map, b ) map &= ~(1 << b)
-#define getB( map, b ) ((map & (1 << b)) ? 1:0)
+#define setB( map, b ) map |= (1 << (b))
+#define clearB( map, b ) map &= ~(1 << (b))
+#define getB( map, b ) (((map) & (1 << (b))) ? 1:0)
 
 // Long array
 void setBit( Bits * map, unsigned int b ) {
-    map[ b>>maxbits_pos ] |= (1 << (b&maxbits_mask)) ;
+    setB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
 }
 
 void clearBit( Bits * map, unsigned int b ) {
-    map[ b>>maxbits_pos ] &= ~(1 << (b&maxbits_mask)) ;
+    clearB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
 }
 
 int getBit( Bits * map, unsigned int b ) {
-    return (map[ b>>maxbits_pos ] & (1 << (b&maxbits_mask))) ? 1:0 ;
+    return getB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
 }
 
 void help( void ) {
@@ -380,21 +380,28 @@ searchState startDays( void ) {
     typedef struct Intermediate * pInter ;
     pInter T = (pInter) Tries ;
 
-    for ( int h ; h<holes ; ++h ) {
+    T[newIndex].game = Game_none ;
+    setB( T[newIndex].game, 31 ); // all holes have foxes initially
+    for ( int h=0 ; h<holes ; ++h ) {
+        printf("B=%d, %d\n",h,holes);
         setB( T[newIndex].game, h ); // all holes have foxes initially
+        printf("B=%d, %d\n",h,holes);
+        showBits(T[newIndex].game);
     }
+    printf("G %D\b",holes);
     for ( int p=0 ; p<poison-1 ; ++p ) {
         T[newIndex].moves[p] = 0 ; // no prior moves
     }
+    printf("G2\b");
     setBit( Gamespace, T[newIndex].game ) ; // flag this configuration
     ++newIndex ;
-    
+    printf("G3\b");
     Day = 0 ;
     do {
         printf("Day %d, States: %d, Moves %d\n",Day+1,newIndex,iPossible);
         switch ( dayPass() ) {
             case won:
-                printf("Victory in %d days!\n",Day+1 ) ; // 0 index
+                printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
             case lost:
                 printf("No solution despite %d days\n",Day );
