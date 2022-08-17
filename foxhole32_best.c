@@ -53,15 +53,15 @@ int searchCount = 0 ;
 
 // Long array
 void setBit( Bits * map, unsigned int b ) {
-    setB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
+    setB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
 }
 
 void clearBit( Bits * map, unsigned int b ) {
-    clearB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
+    clearB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
 }
 
 int getBit( Bits * map, unsigned int b ) {
-    return getB( map[ b>>maxbits_pos ], (b&maxbits_mask) ) ;
+    return getB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
 }
 
 void help( void ) {
@@ -103,15 +103,22 @@ Bits * Gamespace = NULL; // bitmap of all possible game states
     // indexed by foxes as bits to make a number
 
 void makeGamespace() {
-    Bits power2 = 0 ; // to figure number of possible games 
+    uint64_t gamepages = 1 ; // to figure number of possible games 
+    // 2^^holes games
+    // 1 bit / game
+    // 32 bits in each "page"
 
-    setB( power2, holes ) ; // 2^^holes
-    Gamespace = ( Bits *) malloc( power2 * sizeof(Bits) ) ;
+	for ( int h=maxbits_pos; h<holes ; ++h ) {
+		gamepages *= 2;
+	}
+	printf("gamepages = %ld\n",gamepages);
+
+    Gamespace = ( Bits *) malloc( gamepages * sizeof(Bits) ) ;
     if ( Gamespace == NULL ) {
         fprintf( stderr, "Memory exhausted -- games\n" );
         exit(1);
     }
-    for ( int i=0 ; i<power2 ; ++i ) {
+    for ( int i=0 ; i<gamepages ; ++i ) {
         Gamespace[i] = 0 ;
     }
 }
@@ -227,14 +234,15 @@ void makeJumpspace() {
 void showBits( Bits bb ) {
     for ( int y=0 ; y<ylength ; ++y ) {
         for ( int x=0 ; x<xlength ; ++x ) {
-            printf( getB( bb, I(x,y) ) ? "X|":" |" ) ;
+            printf( getB( bb, I(x,y) ) ? "X|":" |" )     Day = 0 ;
+;
         }
         printf("\n");
     }
 }
 
-#define storeSize 1000000
-Bits Tries[storeSize]; // fixed size array holding intermediate game states
+#define gamestate_space 1000000
+Bits Tries[gamestate_space]; // fixed size array holding intermediate game states
 
 int oldNum;
 int newIndex;
@@ -365,7 +373,6 @@ searchState dayPass( void ) {
 }
     
 searchState startDays( void ) {
-
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
@@ -376,27 +383,24 @@ searchState startDays( void ) {
 
     newIndex = 0 ;
     oldNum = 0 ;
-    maxIndex = storeSize / sizeof( struct Intermediate ) ;
+    maxIndex = gamestate_space / sizeof( struct Intermediate ) ;
     typedef struct Intermediate * pInter ;
     pInter T = (pInter) Tries ;
 
+	// initial game position
+    Day = 0 ;
     T[newIndex].game = Game_none ;
-    setB( T[newIndex].game, 31 ); // all holes have foxes initially
     for ( int h=0 ; h<holes ; ++h ) {
-        printf("B=%d, %d\n",h,holes);
-        setB( T[newIndex].game, h ); // all holes have foxes initially
-        printf("B=%d, %d\n",h,holes);
-        showBits(T[newIndex].game);
+		setB( T[newIndex].game, h ); // all holes have foxes
     }
-    printf("G %D\b",holes);
+	// initially no poison history of course
     for ( int p=0 ; p<poison-1 ; ++p ) {
         T[newIndex].moves[p] = 0 ; // no prior moves
     }
-    printf("G2\b");
     setBit( Gamespace, T[newIndex].game ) ; // flag this configuration
     ++newIndex ;
-    printf("G3\b");
-    Day = 0 ;
+
+	// Now loop through days
     do {
         printf("Day %d, States: %d, Moves %d\n",Day+1,newIndex,iPossible);
         switch ( dayPass() ) {
