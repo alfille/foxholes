@@ -17,6 +17,8 @@
  * */
 
 typedef uint32_t Bits;
+typedef uint64_t Map;
+
 Bits Game_none = 0; // no foxes
 
 Bits * Possible = NULL ;
@@ -36,33 +38,25 @@ int circle = 0 ;
 int maxday = 1000000 ;
 int searchCount = 0 ;
 
-#define maxbits 32
+#define MAXHOLES 32
 
-// 2^^maxbits_pos = maxbits
-#define maxbits_pos 5
-
-#define maxbits_mask (maxbits - 1)
-
-#define MAXHOLES maxbits
-
-//single word
-
+// 32 bit for games, moves, jumps
 #define setB( map, b ) map |= (1 << (b))
 #define clearB( map, b ) map &= ~(1 << (b))
 #define getB( map, b ) (((map) & (1 << (b))) ? 1:0)
 
-// Long array
-void setBit( Bits * map, unsigned int b ) {
-    setB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
-}
+// 64 bit for GamesMap array
+#define Big1 ( (Map) 1 )
+#define Exp64 6
+#define GAMESIZE ( Big1 << (32-Exp64) )
+#define Mask64 ( ( Big1<<Exp64) -1 )
 
-void clearBit( Bits * map, unsigned int b ) {
-    clearB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
-}
+#define setB64( b ) ( GamesMap[(b)>>Exp64] |= (Big1 << ( (b) & Mask64 )) )
+#define getB64( b ) ( ( GamesMap[(b)>>Exp64] & (Big1 << ( (b) & Mask64 ))) ? 1 : 0 )
 
-int getBit( Bits * map, unsigned int b ) {
-    return getB( (map[ (b)>>maxbits_pos ]), (b&maxbits_mask) ) ;
-}
+Map GamesMap[GAMESIZE]; // bitmap of all possible game states
+    // indexed by foxes as bits to make a number
+
 
 void help( void ) {
     printf("Foxhole32 -- solve the foxhole puzzle\n") ;
@@ -99,28 +93,10 @@ void printStatus() {
     printf("\n");
 }
 
-Bits * Gamespace = NULL; // bitmap of all possible game states
-    // indexed by foxes as bits to make a number
 
-void makeGamespace() {
-    uint64_t gamepages = 1 ; // to figure number of possible games 
-    // 2^^holes games
-    // 1 bit / game
-    // 32 bits in each "page"
-
-	for ( int h=maxbits_pos; h<holes ; ++h ) {
-		gamepages *= 2;
-	}
-	printf("gamepages = %ld\n",gamepages);
-
-    Gamespace = ( Bits *) malloc( gamepages * sizeof(Bits) ) ;
-    if ( Gamespace == NULL ) {
-        fprintf( stderr, "Memory exhausted -- games\n" );
-        exit(1);
-    }
-    for ( int i=0 ; i<gamepages ; ++i ) {
-        Gamespace[i] = 0 ;
-    }
+void makeGamesMap() {
+	printf("gamepages = %ld\n",sizeof( GamesMap) );
+    memset( GamesMap, 0, sizeof( GamesMap ) ) ;
 }
 
 // For moves -- go from x,y to index
@@ -234,8 +210,7 @@ void makeJumpspace() {
 void showBits( Bits bb ) {
     for ( int y=0 ; y<ylength ; ++y ) {
         for ( int x=0 ; x<xlength ; ++x ) {
-            printf( getB( bb, I(x,y) ) ? "X|":" |" )     Day = 0 ;
-;
+            printf( getB( bb, I(x,y) ) ? "X|":" |" );
         }
         printf("\n");
     }
@@ -312,13 +287,13 @@ searchState calcMove( Bits move, int iold, Bits * new_game ) {
     }
 
     // Already seen?
-    if ( getBit( Gamespace, *new_game ) == 1 ) {
+    if ( getB64( *new_game ) == 1 ) {
         // game configuration already seen
         return retry ; // means try another move
     }
     
     // Valid new game, continue further
-    setBit( Gamespace, *new_game ) ; // flag this configuration
+    setB64( *new_game ) ; // flag this configuration
     return forward ;
 }
 
@@ -397,7 +372,7 @@ searchState startDays( void ) {
     for ( int p=0 ; p<poison-1 ; ++p ) {
         T[newIndex].moves[p] = 0 ; // no prior moves
     }
-    setBit( Gamespace, T[newIndex].game ) ; // flag this configuration
+    setB64( T[newIndex].game ) ; // flag this configuration
     ++newIndex ;
 
 	// Now loop through days
@@ -555,7 +530,7 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Setting up game array\n");
     }
-    makeGamespace(); // bitmap of game layouts (to avoid revisiting)
+    makeGamesMap(); // bitmap of game layouts (to avoid revisiting)
 
     if ( update ) {
         printf("Starting search\n");
