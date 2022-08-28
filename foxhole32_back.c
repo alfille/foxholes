@@ -40,6 +40,7 @@ int maxday = 1000000 ;
 int searchCount = 0 ;
 
 #define MAXHOLES 32
+#define MAXPOISON 4
 
 // 32 bit for games, moves, jumps
 #define setB( map, b ) map |= (1 << (b))
@@ -234,6 +235,9 @@ int Day ;
 int newStart ;
 int oldStart ;
 int newNext ;
+int halfStart = 0 ;
+int halfNext = 0 ;
+int nextHalf = 0 ;
 
 typedef enum {
     won, // all foxes caught
@@ -243,10 +247,7 @@ typedef enum {
     backward, // go back a day
 } searchState ;
 
-searchState calcMove( Bits move, int iold, Bits * new_game ) {
-
-    Bits thisGame = Tries[iold].game ; // current fox locations
-
+searchState calcMove( Bits* move, Bits thisGame, Bits * new_game, Bits target ) {
     if ( update ) {
         ++searchCount ;
         if ( (searchCount & 0xFFFFFF) == 0 ) {
@@ -255,44 +256,23 @@ searchState calcMove( Bits move, int iold, Bits * new_game ) {
     }
 
     // clear moves
-    thisGame &= ~move ;
+    thisGame &= ~move[0] ;
 
     // calculate where they jump to
     *new_game = Game_none ;
-    for ( int i=0 ; i<holes ; ++i ) {
-        if ( getB( thisGame, i ) ) { // fox currently
-             *new_game|= Jumpspace[i] ; // jumps to here
+    for ( int j=0 ; j<holes ; ++j ) {
+        if ( getB( thisGame, j ) ) { // fox currently
+             *new_game|= Jumpspace[j] ; // jumps to here
         }
     }
 
     // do poisoning
-    if ( poison > 1 ) { // any?
-        typedef struct {
-            Bits move[poison-1] ; 
-        } Pstruct ;
-        Pstruct * TryPoison = TP ;
-        Pstruct * HalhPoison = HP ;
-
-        *new_game &= ~move ; // today
-        for ( int p = 1 ; p<poison ; ++p ) { // maybe past days?
-            *new_game &= ~TryPoison[iold].move[p-1] ;
-        }
+    for ( int p=0 ; p<poison ; ++p ) {
+		*new_game &= ~move[p] ;
     }
 
-/*
-    printf("Day %d:\n",Day);
-    printf("\tGame coming in:\n");
-    showBits(game);
-    printf("\tMoves:\n");
-    showBits(move);
-//    printf("\tGame minus moves:\n");
-//    showBits(thisGame);
-    printf("\tResult:\n");
-    showBits(*new_game);
-*/
-
     // Victory? (No foxes)
-    if ( *new_game==Game_none ) {
+    if ( *new_game==target ) {
         return won ;
     }
 
@@ -313,13 +293,11 @@ searchState dayPass( void ) {
     } Pstruct ;
     Pstruct * TryPoison = TP ;
     Pstruct * HalhPoison = HP ;
+    
+    Bits move[MAXPOISON] ; // for poisoning
 
     oldStart = newStart ;
-    int oldLast = newNext-1 ;
-    if ( oldLast < 0 ) {
-        oldLast = gamevisit_mask ;
-    }
-    newStart = newNext ;
+	newStart = newNext ;
     
     ++Day;
     if ( Day > maxday ) {
@@ -327,10 +305,15 @@ searchState dayPass( void ) {
         return lost ;
     }
     
-    for ( int iold=oldStart ; iold!=oldLast ; iold=(iold+1)&gamevisit_mask ) { // each possible position
+    for ( int iold=oldStart ; iold!=newStart ; iold=(iold+1)&gamevisit_mask ) { // each possible position
         for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
             Bits newT ;
-            switch( calcMove( Possible[ip], iold, &newT ) ) {
+            move[0] = Possible[ip] ; // actual move (and poisoning)
+			for ( int p=1 ; p<poison ; ++p ) {
+				move[p] = TryPoison[iold].move[p-1] ;
+			}
+					
+            switch( calcMove( move, Tries[iold].game, &newT, Game_none ) ) {
                 case won:
                     return won;
                 case forward:
@@ -338,10 +321,9 @@ searchState dayPass( void ) {
                     Tries[newNext].game = newT ;
                     Tries[newNext].refer = Tries[iold].refer ;
                     if ( poison > 1 ) { // update poison list
-                        for ( int p=poison-2 ; p>0 ; --p ) {
-                            TryPoison[newNext].move[p] = TryPoison[iold].move[p-1] ;
+                        for ( int p=poison-1 ; p>0 ; --p ) {
+                            TryPoison[newNext].move[p] = move[p-1] ;
                         }
-                        TryPoison[newNext].move[0] = Possible[ip] ;
                     }
                     newNext = (newNext+1)&gamevisit_mask ;
                     if ( newNext == oldStart ) {
@@ -364,23 +346,26 @@ searchState startDays( void ) {
     newNext = 0 ;
     newStart = newNext ;
     
+	typedef struct {
+		Bits move[poison-1] ; 
+	} Pstruct ;
+	Pstruct * TryPoison = TP ;
+	Pstruct * HalfPoison = HP ;
     if ( poison > 1 ) {
-        typedef struct {
-            Bits move[poison-1] ; 
-        } Pstruct ;
         TP = malloc( gamevisit_space * sizeof(Pstruct) ) ;
         HP = malloc( gamevisit_space * sizeof(Pstruct) ) ;
-        Pstruct * TryPoison = TP ;
-        Pstruct * HalhPoison = HP ;
+        TryPoison = TP ;
+        HalfPoison = HP ;
         // initially no poison history of course
-        for ( int p=0 ; p<poison-1 ; ++p ) {
-            TryPoison[newStart].move[p] = 0 ; // no prior moves
+        for ( int p=1 ; p<poison ; ++p ) {
+            TryPoison[newStart].move[p-1] = 0 ; // no prior moves
         }
     }
 
     // initial game position
     Day = 0 ;
-    for ( int h=0 ; h<holes ; ++h ) {
+    Game_all = 0 ; // clear bits
+    for ( int h=0 ; h<holes ; ++h ) { // set all holes bits
         setB( Game_all, h ); // all holes have foxes
     }
     Tries[newNext].game = Game_all ;
@@ -390,7 +375,7 @@ searchState startDays( void ) {
 
     // Now loop through days
     do {
-        printf("Day %d, States: %d, Moves %d\n",Day+1,newStart,iPossible);
+        printf("Day %d, States: %d, Moves %d\n",Day+1,(newNext-newStart+gamevisit_space)&gamevisit_mask,iPossible);
         switch ( dayPass() ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
@@ -401,6 +386,18 @@ searchState startDays( void ) {
             default:
                 break ;
         }
+        // Save intermediate for backtracing winning strategy
+        if ( Day == nextHalf ) {
+			for ( int inew=newStart ; inew != newNext ; inew = (inew+1)&gamevisit_mask ) {
+				Halves[halfNext].game ; Tries[inew].game ;
+				Halves[halfNext].refer = Tries[inew].refer ;
+				Tries[inew].refer = inew ;
+				for ( int p=1 ; p<poison ; ++p ) {
+					HalfPoison[halfNext].move[p] = TryPoison[inew].move[p] ;
+				}
+			}
+			nextHalf *= 2 ;
+		}
     } while(1) ;
 }
 
@@ -532,6 +529,12 @@ int main( int argc, char **argv )
     if ( visits > holes ) {
         fprintf(stderr, "Changing visits to be no larger than the number of holes (%d)\n",holes);
         visits = holes ;
+    }
+
+    // poison
+    if ( poison > MAXPOISON ) {
+        fprintf(stderr, "Changing poison days to be no larger than the maximum programmed for (%d)\n",MAXPOISON);
+        poison = MAXPOISON ;
     }
 
     printStatus();    
