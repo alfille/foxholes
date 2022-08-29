@@ -220,6 +220,9 @@ void showBits( Bits bb ) {
 
 #define gamevisit_space 0x100000
 #define gamevisit_mask  0x0FFFFF
+#define INC(x) ( ((x)+1) & gamevisit_mask )
+#define DEC(x) ( ((x)+gamevisit_space-1) & gamevisit_mask )
+#define DIFF(x,y) ( ( gamevisit_space+(x)-(y) ) & gamevisit_mask )
 #define MaxDays 300
 struct tryStruct {
     Bits game ;
@@ -305,7 +308,7 @@ searchState dayPass( void ) {
         return lost ;
     }
     
-    for ( int iold=oldStart ; iold!=newStart ; iold=(iold+1)&gamevisit_mask ) { // each possible position
+    for ( int iold=oldStart ; iold!=newStart ; iold=INC(iold) ) { // each possible position
         for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
             Bits newT ;
             move[0] = Possible[ip] ; // actual move (and poisoning)
@@ -325,7 +328,7 @@ searchState dayPass( void ) {
                             TryPoison[newNext].move[p] = move[p-1] ;
                         }
                     }
-                    newNext = (newNext+1)&gamevisit_mask ;
+                    newNext = INC(newNext) ;
                     if ( newNext == oldStart ) {
                         printf("Too large a solution space\n");
                         return lost ;
@@ -375,7 +378,7 @@ searchState startDays( void ) {
 
     // Now loop through days
     do {
-        printf("Day %d, States: %d, Moves %d\n",Day+1,(newNext-newStart+gamevisit_space)&gamevisit_mask,iPossible);
+        printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(newNext,newStart),iPossible);
         switch ( dayPass() ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
@@ -388,13 +391,14 @@ searchState startDays( void ) {
         }
         // Save intermediate for backtracing winning strategy
         if ( Day == nextHalf ) {
-			for ( int inew=newStart ; inew != newNext ; inew = (inew+1)&gamevisit_mask ) {
+			for ( int inew=newStart ; inew != newNext ; inew = INC(inew) ) {
 				Halves[halfNext].game ; Tries[inew].game ;
 				Halves[halfNext].refer = Tries[inew].refer ;
 				Tries[inew].refer = inew ;
 				for ( int p=1 ; p<poison ; ++p ) {
 					HalfPoison[halfNext].move[p] = TryPoison[inew].move[p] ;
 				}
+                halfNext = INC(halfNext) ;
 			}
 			nextHalf *= 2 ;
 		}
