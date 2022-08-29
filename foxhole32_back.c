@@ -218,29 +218,51 @@ void showBits( Bits bb ) {
     }
 }
 
-#define gamevisit_space 0x100000
-#define gamevisit_mask  0x0FFFFF
-#define INC(x) ( ((x)+1) & gamevisit_mask )
-#define DEC(x) ( ((x)+gamevisit_space-1) & gamevisit_mask )
-#define DIFF(x,y) ( ( gamevisit_space+(x)-(y) ) & gamevisit_mask )
+#define gamestate_length 0x100000
+#define INC(x) ( ((x)+1) % gamestate_length )
+#define DEC(x) ( ((x)+gamestate_length-1) % gamestate_length )
+#define DIFF(x,y) ( ( gamestate_length+(x)-(y) ) % gamestate_length )
 #define MaxDays 300
 struct tryStruct {
     Bits game ;
     Bits refer ;
 } ;
-struct tryStruct Tries[gamevisit_space]; // fixed size array holding intermediate game states
-struct tryStruct Halves[gamevisit_space]; // fixed size array holding intermediate game states
+struct tryStruct Tries[gamestate_length]; // fixed size array holding intermediate game states
+struct tryStruct Halves[gamestate_length]; // fixed size array holding intermediate game states
 void * TP = NULL ;
 void * HP = NULL ;
 Bits WinStates[MaxDays+1];
 
+#define backLook_length (MaxDays+1)
+struct {
+	Bits targetGame ;
+	int length ;
+	int targetDay ;
+	int dayIncrement ;
+	int halfStart ;
+	int halfNext ;
+	struct {
+		int start;
+		int length;
+		int day;
+	} entries[backLook_length] ;
+} backSolve ;
+
+void makeBack( void ) {
+	backSolve.length = 0 ;
+	backSolve.entries[0].start = 0 ;
+	backSolve.entries[0].length = 0 ;
+	backSolve.halfStart = 0 ;
+	backSolve.halfNext = 0 ;
+	backSolve.targetDay = 2 ;
+	backSolve.dayIncrement = 2 ;
+	backSolve.targetGame = Game_none ;
+}
+
 int Day ;
+int victoryDay = 0 ;
 int newStart ;
-int oldStart ;
 int newNext ;
-int halfStart = 0 ;
-int halfNext = 0 ;
-int nextHalf = 0 ;
 
 typedef enum {
     won, // all foxes caught
@@ -299,7 +321,7 @@ searchState dayPass( void ) {
     
     Bits move[MAXPOISON] ; // for poisoning
 
-    oldStart = newStart ;
+    int iold = newStart ; // need to define before loop
 	newStart = newNext ;
     
     ++Day;
@@ -308,7 +330,7 @@ searchState dayPass( void ) {
         return lost ;
     }
     
-    for ( int iold=oldStart ; iold!=newStart ; iold=INC(iold) ) { // each possible position
+    for (  ; iold!=newStart ; iold=INC(iold) ) { // each possible position
         for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
             Bits newT ;
             move[0] = Possible[ip] ; // actual move (and poisoning)
@@ -316,8 +338,14 @@ searchState dayPass( void ) {
 				move[p] = TryPoison[iold].move[p-1] ;
 			}
 					
-            switch( calcMove( move, Tries[iold].game, &newT, Game_none ) ) {
+            switch( calcMove( move, Tries[iold].game, &newT, backSolve.targetGame ) ) {
                 case won:
+					WinStates[Day] = backSolve.targetGame ;
+					WinStates[Day-1] = Tries[iold].game ;
+					if ( backSolve.targetGame == Game_none ) {
+						// real end of game
+						victoryDay = Day ;
+					}
                     return won;
                 case forward:
                     // Add this game state to the furture evaluation list
@@ -329,7 +357,7 @@ searchState dayPass( void ) {
                         }
                     }
                     newNext = INC(newNext) ;
-                    if ( newNext == oldStart ) {
+                    if ( newNext == iold ) { // head touches tail
                         printf("Too large a solution space\n");
                         return lost ;
                     }
@@ -341,6 +369,32 @@ searchState dayPass( void ) {
     }
     return newNext != newStart ? forward : lost ;
 }
+
+void addHalf( void ) {
+	typedef struct {
+		Bits move[poison-1] ; 
+	} Pstruct ;
+	Pstruct * TryPoison = TP ;
+	Pstruct * HalfPoison = HP ;
+
+	// move current state to "Half" array"
+	int insertLength = DIFF(newNext,newStart) ;
+	while ( DIFF(backSolve.entries[0].start,backSolve.entries[backSolve.length].start) > insertLength ) {
+		memmove( & backSolve.entries[0] , & backSolve.entries[backSolve.length] , (backSolve.length-1)*sizeof( backSolve.entries[0] ) ) ;
+		--backSolve.length ;
+	}
+	for ( int inew=newStart ; inew != newNext ; inew = INC(inew) ) {
+		Halves[backSolve.halfNext].game ; Tries[inew].game ;
+		Halves[backSolve.halfNext].refer = Tries[inew].refer ;
+		Tries[inew].refer = backSolve.halfNext ;
+		for ( int p=1 ; p<poison ; ++p ) {
+			HalfPoison[backSolve.halfNext].move[p] = TryPoison[inew].move[p] ;
+		}
+		backSolve.halfNext = INC(backSolve.halfNext) ;
+	}
+	backSolve.targetDay += backSolve.dayIncrement ;
+}
+	
     
 searchState startDays( void ) {
     // Set up arrays of game states
@@ -355,8 +409,8 @@ searchState startDays( void ) {
 	Pstruct * TryPoison = TP ;
 	Pstruct * HalfPoison = HP ;
     if ( poison > 1 ) {
-        TP = malloc( gamevisit_space * sizeof(Pstruct) ) ;
-        HP = malloc( gamevisit_space * sizeof(Pstruct) ) ;
+        TP = malloc( gamestate_length * sizeof(Pstruct) ) ;
+        HP = malloc( gamestate_length * sizeof(Pstruct) ) ;
         TryPoison = TP ;
         HalfPoison = HP ;
         // initially no poison history of course
@@ -365,16 +419,27 @@ searchState startDays( void ) {
         }
     }
 
-    // initial game position
+    // create an all-fox state
     Day = 0 ;
     Game_all = 0 ; // clear bits
     for ( int h=0 ; h<holes ; ++h ) { // set all holes bits
         setB( Game_all, h ); // all holes have foxes
     }
+    
+    // Set winning path to unknown
+    for ( int d=0 ; d<MaxDays ; ++d ) {
+		WinStates[d] = Game_all ;
+	}
+	
+	// set solver state
+	makeBack() ;
+		
+	// set Initial position
     Tries[newNext].game = Game_all ;
     Tries[newNext].refer = Game_all ;
     setB64( Tries[newNext].game ) ; // flag this configuration
     ++newNext ;
+    
 
     // Now loop through days
     do {
@@ -390,17 +455,8 @@ searchState startDays( void ) {
                 break ;
         }
         // Save intermediate for backtracing winning strategy
-        if ( Day == nextHalf ) {
-			for ( int inew=newStart ; inew != newNext ; inew = INC(inew) ) {
-				Halves[halfNext].game ; Tries[inew].game ;
-				Halves[halfNext].refer = Tries[inew].refer ;
-				Tries[inew].refer = inew ;
-				for ( int p=1 ; p<poison ; ++p ) {
-					HalfPoison[halfNext].move[p] = TryPoison[inew].move[p] ;
-				}
-                halfNext = INC(halfNext) ;
-			}
-			nextHalf *= 2 ;
+        if ( Day == backSolve.targetDay ) {
+			addHalf() ;
 		}
     } while(1) ;
 }
