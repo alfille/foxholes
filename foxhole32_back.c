@@ -27,6 +27,9 @@ int iPossible ;
 
 typedef int Move ;
 
+#define True 1
+#define False 0
+
 // Globals
 int xlength = 5;
 int ylength = 1;
@@ -231,35 +234,31 @@ struct tryStruct Tries[gamestate_length]; // fixed size array holding intermedia
 struct tryStruct Halves[gamestate_length]; // fixed size array holding intermediate game states
 void * TP = NULL ;
 void * HP = NULL ;
-Bits WinStates[MaxDays+1];
+Bits WinState[MaxDays+1];
+Bits WinMove[MaxDays+1];
 
 #define backLook_length (MaxDays+1)
 struct {
-	Bits targetGame ;
-	int length ;
-	int targetDay ;
-	int dayIncrement ;
-	int halfStart ;
-	int halfNext ;
-	struct {
-		int start;
-		int length;
-		int day;
-	} entries[backLook_length] ;
+    int addDay ; // next day to add to backtrace
+    int increment ; // increment for addDay
+    int start ; // start index for entries list
+    int next ; // next index for entries list
+    struct {
+        int start; // start in Halves
+        int day; // corresponding day
+    } entries[backLook_length] ; // cirular entries buffer
 } backSolve ;
 
+#define backINC(x) ( ((x)+1) % backLook_length )
+#define backDEC(x) ( ((x)-1+backLook_length) % backLook_length )
 void makeBack( void ) {
-	backSolve.length = 0 ;
-	backSolve.entries[0].start = 0 ;
-	backSolve.entries[0].length = 0 ;
-	backSolve.halfStart = 0 ;
-	backSolve.halfNext = 0 ;
-	backSolve.targetDay = 2 ;
-	backSolve.dayIncrement = 2 ;
-	backSolve.targetGame = Game_none ;
+    backSolve.start = 0 ;
+    backSolve.next = 0 ;
+    backSolve.entries[0].start = 0 ;
+    backSolve.addDay = 1 ;
+    backSolve.increment = 3 ;
 }
 
-int Day ;
 int victoryDay = 0 ;
 int newStart ;
 int newNext ;
@@ -269,7 +268,6 @@ typedef enum {
     lost, // no more moves
     forward, // go to next day
     retry, // try another move for this day
-    backward, // go back a day
 } searchState ;
 
 searchState calcMove( Bits* move, Bits thisGame, Bits * new_game, Bits target ) {
@@ -293,7 +291,7 @@ searchState calcMove( Bits* move, Bits thisGame, Bits * new_game, Bits target ) 
 
     // do poisoning
     for ( int p=0 ; p<poison ; ++p ) {
-		*new_game &= ~move[p] ;
+        *new_game &= ~move[p] ;
     }
 
     // Victory? (No foxes)
@@ -312,7 +310,19 @@ searchState calcMove( Bits* move, Bits thisGame, Bits * new_game, Bits target ) 
     return forward ;
 }
 
-searchState dayPass( void ) {
+void backTrace( int generation, int refer ) {
+    while ( refer != Game_all ) {
+        printf("backtrace generation=%d day=%d refer=%d\n",generation,backSolve.entries[generation].day,refer) ;
+        WinState[backSolve.entries[generation].day] = Halves[refer].game ;
+        refer = Halves[refer].refer ;
+        if ( generation == backSolve.start ) {
+            break ;
+        }
+        generation = backDEC(generation) ;
+    }
+}
+
+searchState dayPass( int Day, Bits target ) {
     typedef struct {
         Bits move[poison-1] ; 
     } Pstruct ;
@@ -322,30 +332,26 @@ searchState dayPass( void ) {
     Bits move[MAXPOISON] ; // for poisoning
 
     int iold = newStart ; // need to define before loop
-	newStart = newNext ;
-    
-    ++Day;
-    if ( Day > maxday ) {
-        printf( "Exceeded %d days.\n",maxday ) ;
-        return lost ;
-    }
-    
+    newStart = newNext ;
+        
     for (  ; iold!=newStart ; iold=INC(iold) ) { // each possible position
         for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
             Bits newT ;
             move[0] = Possible[ip] ; // actual move (and poisoning)
-			for ( int p=1 ; p<poison ; ++p ) {
-				move[p] = TryPoison[iold].move[p-1] ;
-			}
-					
-            switch( calcMove( move, Tries[iold].game, &newT, backSolve.targetGame ) ) {
+            for ( int p=1 ; p<poison ; ++p ) {
+                move[p] = TryPoison[iold].move[p-1] ;
+            }
+                    
+            switch( calcMove( move, Tries[iold].game, &newT, target ) ) {
                 case won:
-					WinStates[Day] = backSolve.targetGame ;
-					WinStates[Day-1] = Tries[iold].game ;
-					if ( backSolve.targetGame == Game_none ) {
-						// real end of game
-						victoryDay = Day ;
-					}
+                    WinState[Day] = target ;
+                    WinMove[Day] = move[0] ;
+                    WinState[Day-1] = Tries[iold].game ;
+                    if ( target == Game_none ) {
+                        // real end of game
+                        victoryDay = Day ;
+                    }
+                    backTrace( backDEC(backSolve.next), Tries[iold].refer ) ;
                     return won;
                 case forward:
                     // Add this game state to the furture evaluation list
@@ -370,31 +376,40 @@ searchState dayPass( void ) {
     return newNext != newStart ? forward : lost ;
 }
 
-void addHalf( void ) {
-	typedef struct {
-		Bits move[poison-1] ; 
-	} Pstruct ;
-	Pstruct * TryPoison = TP ;
-	Pstruct * HalfPoison = HP ;
+void addBack( int Day ) {
+    typedef struct {
+        Bits move[poison-1] ; 
+    } Pstruct ;
+    Pstruct * TryPoison = TP ;
+    Pstruct * HalfPoison = HP ;
+    
+    printf("Back add Day=%d Start=%d Next = %d\n",Day,backSolve.start,backSolve.next);
 
-	// move current state to "Half" array"
-	int insertLength = DIFF(newNext,newStart) ;
-	while ( DIFF(backSolve.entries[0].start,backSolve.entries[backSolve.length].start) > insertLength ) {
-		memmove( & backSolve.entries[0] , & backSolve.entries[backSolve.length] , (backSolve.length-1)*sizeof( backSolve.entries[0] ) ) ;
-		--backSolve.length ;
-	}
-	for ( int inew=newStart ; inew != newNext ; inew = INC(inew) ) {
-		Halves[backSolve.halfNext].game ; Tries[inew].game ;
-		Halves[backSolve.halfNext].refer = Tries[inew].refer ;
-		Tries[inew].refer = backSolve.halfNext ;
-		for ( int p=1 ; p<poison ; ++p ) {
-			HalfPoison[backSolve.halfNext].move[p] = TryPoison[inew].move[p] ;
-		}
-		backSolve.halfNext = INC(backSolve.halfNext) ;
-	}
-	backSolve.targetDay += backSolve.dayIncrement ;
+    // back room for new data
+    int insertLength = DIFF(newNext,newStart) ;
+    if ( backSolve.start != backSolve.next ) {
+        while ( DIFF(backSolve.entries[backSolve.start].start,backSolve.entries[backSolve.next].start) < insertLength ) {
+            backSolve.start = backINC(backSolve.start) ;
+            ++backSolve.increment ;
+        }
+    }
+
+    // move current state to "Back" array"
+    backSolve.entries[backSolve.next].day = Day ;
+    int index = backSolve.entries[backSolve.next].start ;
+    for ( int inew=newStart ; inew != newNext ; inew = INC(inew), index=INC(index) ) {
+        Halves[index].game  = Tries[inew].game ;
+        Halves[index].refer = Tries[inew].refer ;
+        Tries[inew].refer = index ;
+        for ( int p=1 ; p<poison ; ++p ) {
+            HalfPoison[index].move[p] = TryPoison[inew].move[p] ;
+        }
+    }
+    backSolve.next = backINC(backSolve.next) ;
+    backSolve.entries[backSolve.next].start = index ;
+    backSolve.addDay += backSolve.increment ;
 }
-	
+    
     
 searchState startDays( void ) {
     // Set up arrays of game states
@@ -403,11 +418,11 @@ searchState startDays( void ) {
     newNext = 0 ;
     newStart = newNext ;
     
-	typedef struct {
-		Bits move[poison-1] ; 
-	} Pstruct ;
-	Pstruct * TryPoison = TP ;
-	Pstruct * HalfPoison = HP ;
+    typedef struct {
+        Bits move[poison-1] ; 
+    } Pstruct ;
+    Pstruct * TryPoison = TP ;
+    Pstruct * HalfPoison = HP ;
     if ( poison > 1 ) {
         TP = malloc( gamestate_length * sizeof(Pstruct) ) ;
         HP = malloc( gamestate_length * sizeof(Pstruct) ) ;
@@ -420,7 +435,6 @@ searchState startDays( void ) {
     }
 
     // create an all-fox state
-    Day = 0 ;
     Game_all = 0 ; // clear bits
     for ( int h=0 ; h<holes ; ++h ) { // set all holes bits
         setB( Game_all, h ); // all holes have foxes
@@ -428,13 +442,14 @@ searchState startDays( void ) {
     
     // Set winning path to unknown
     for ( int d=0 ; d<MaxDays ; ++d ) {
-		WinStates[d] = Game_all ;
-	}
-	
-	// set solver state
-	makeBack() ;
-		
-	// set Initial position
+        WinState[d] = Game_all ;
+        WinMove[d] = Game_none ;
+    }
+    
+    // set solver state
+    makeBack() ;
+        
+    // set Initial position
     Tries[newNext].game = Game_all ;
     Tries[newNext].refer = Game_all ;
     setB64( Tries[newNext].game ) ; // flag this configuration
@@ -442,9 +457,9 @@ searchState startDays( void ) {
     
 
     // Now loop through days
-    do {
+    for ( int Day=1 ; Day < maxday ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(newNext,newStart),iPossible);
-        switch ( dayPass() ) {
+        switch ( dayPass(Day,Game_none) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
@@ -455,12 +470,127 @@ searchState startDays( void ) {
                 break ;
         }
         // Save intermediate for backtracing winning strategy
-        if ( Day == backSolve.targetDay ) {
-			addHalf() ;
-		}
-    } while(1) ;
+        if ( Day == backSolve.addDay ) {
+            addBack(Day) ;
+        }
+    }
+    printf( "Exceeded %d days.\n",maxday ) ;
+    return lost ;
+}
+searchState restartDays( int day, Bits current, Bits target ) {
+    // Set up arrays of game states
+    //  will evaluate all states for each day for all moves and add to next day if unique
+
+    newNext = 0 ;
+    newStart = newNext ;
+    
+    typedef struct {
+        Bits move[poison-1] ; 
+    } Pstruct ;
+    Pstruct * TryPoison = TP ;
+    Pstruct * HalfPoison = HP ;
+
+    if ( poison > 1 ) {
+        // initially no poison history of course
+        for ( int p=1 ; p<poison ; ++p ) {
+            TryPoison[newStart].move[p-1] = 0 ; // no prior moves
+        }
+    }
+
+    
+    // set solver state
+    makeBack() ;
+    backSolve.addDay = day+1 ;
+
+    // set Initial position
+    Tries[newNext].game = current ;
+    Tries[newNext].refer = Game_all ;
+    setB64( Tries[newNext].game ) ; // flag this configuration
+    ++newNext ;
+    
+    // Now loop through days
+    for ( int Day=day ; Day<=victoryDay ; ++Day ) {
+        printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(newNext,newStart),iPossible);
+        switch ( dayPass( Day, target ) ) {
+            case won:
+                printf("Victory in %d days!\n",Day ) ; // 0 index
+                return won ;
+            case lost:
+                printf("No solution despite %d days\n",Day );
+                return lost ;
+            default:
+                break ;
+        }
+        // Save intermediate for backtracing winning strategy
+        if ( Day == backSolve.addDay ) {
+            addBack(Day) ;
+        }
+    }
 }
 
+void fixupTrace( void ) {
+    while (True) {
+        // any unsolved?
+        int all_solved = True ;
+        for ( int d=1 ; d<=victoryDay ; ++d ) {
+            if ( WinState[d] == Game_all ) {
+                printf("testing %d\n",d);
+                showBits(WinState[d]);
+                all_solved = False ;
+                break ;
+            }
+        }
+        if ( all_solved ) {
+            return ;
+        }
+        // start search
+        makeGamesMap() ; // clear bits
+        int lastDay = 0 ;
+        int gap = False ;
+        for ( int d=1 ; d<victoryDay ; ++d ) { // go through days
+            if ( WinState[d] == Game_all ) {
+                // unknown solution
+                gap = True ;
+            } else {
+                // known solution
+                if ( gap ) {
+                    // solution after unknown gap
+                    restartDays( lastDay, WinState[lastDay], WinState[d] );
+                }
+                gap = False ;
+                lastDay = d ;
+            }
+        }
+    }
+}
+
+void fixupMoves( void ) {
+    Bits move[poison] ; 
+    for ( int p=0 ; p<poison ; ++p ) {
+        move[p] = Game_none ;
+    }
+    
+    for ( int Day=1 ; Day < victoryDay ; ++Day ) {
+        // fill poison
+        for ( int p=1 ; p<poison ; ++p ) {
+            move[p] = move[p-1] ;
+        }
+        move[0] = WinMove[Day] ;
+
+        // solve unknown moves
+        if ( WinMove[Day] == Game_none ) {
+            for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
+                Bits newT ;
+                move[0] = Possible[ip] ; // actual move (and poisoning)
+                if ( calcMove( move, WinState[Day-1], &newT, WinState[Day] ) == won ) {
+                    WinMove[Day] = move[0] ;
+                    break ;
+                }
+            }
+        }
+    }
+}
+        
 int setPscan( int index, int start, int level, Bits pattern ) {
     // index into Possible (list of moves)
     // start hole to start current level with
@@ -480,6 +610,7 @@ int setPscan( int index, int start, int level, Bits pattern ) {
 }
 
 Bits * makePossible( void ) {
+    // Create bitmaps of all possible moves (permutations of visits bits in holes spae
     uint64_t top,bot;
     int v = visits ;
 
@@ -549,19 +680,19 @@ int main( int argc, char **argv )
             break ;
         case 'o':
         case 'O':
-            offset = 1 ;
+            offset = True ;
             break ;
         case 'c':
         case 'C':
-            circle = 1 ;
+            circle = True ;
             break;
         case 'g':
         case 'G':
-            circle = 0;
+            circle = False ;
             break ;
         case 'u':
         case 'U':
-            update = 1 ;
+            update = True ;
             break ;
         case 'm':
         case 'M':
@@ -598,7 +729,7 @@ int main( int argc, char **argv )
     }
 
     printStatus();    
-
+    
     for ( int h=0 ; h<holes ; ++h ) {
         setB( Game_all, h ) ;
     }
@@ -618,5 +749,22 @@ int main( int argc, char **argv )
     }
     makePossible(); // array of moves
 
-    startDays() ; // start searching through days until a solution is found (will be fastest by definition)
+    switch (startDays()) { // start searching through days until a solution is found (will be fastest by definition)
+        case won:
+            fixupTrace() ;
+            fixupMoves() ;
+            break ;
+        default:
+            break ;
+    
+    }
+
+    for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
+        printf("Day %d\n",d);
+        showBits( WinState[d] ) ;
+    }
+    for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
+        printf("Move %d\n",d);
+        showBits( WinMove[d] ) ;
+    }
 }
