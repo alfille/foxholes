@@ -100,7 +100,6 @@ void printStatus() {
 
 
 void makeGamesMap() {
-    printf("gamepages = %ld\n",sizeof( GamesMap) );
     memset( GamesMap, 0, sizeof( GamesMap ) ) ;
 }
 
@@ -256,7 +255,7 @@ void makeBack( void ) {
     backSolve.next = 0 ;
     backSolve.entries[0].start = 0 ;
     backSolve.addDay = 1 ;
-    backSolve.increment = 3 ;
+    backSolve.increment = 1 ;
 }
 
 int victoryDay = 0 ;
@@ -270,7 +269,7 @@ typedef enum {
     retry, // try another move for this day
 } searchState ;
 
-searchState calcMove( Bits* move, Bits thisGame, Bits * new_game, Bits target ) {
+searchState calcMove( Bits* move, Bits thisGame, Bits *new_game, Bits target ) {
     if ( update ) {
         ++searchCount ;
         if ( (searchCount & 0xFFFFFF) == 0 ) {
@@ -571,6 +570,7 @@ void fixupMoves( void ) {
     }
     
     for ( int Day=1 ; Day < victoryDay ; ++Day ) {
+        printf("FixupMoves Day=%d\n",Day);
         // fill poison
         for ( int p=1 ; p<poison ; ++p ) {
             move[p] = move[p-1] ;
@@ -579,10 +579,34 @@ void fixupMoves( void ) {
 
         // solve unknown moves
         if ( WinMove[Day] == Game_none ) {
+            printf("FixupMoves fix Day=%d\n",Day);
+            printf("\tfrom\n");
+            showBits(WinState[Day-1]);
+            printf("\tto\n");
+            showBits(WinState[Day]);
             for ( int ip=0 ; ip<iPossible ; ++ip ) { // each possible move
-                Bits newT ;
+                Bits newGame = Game_none ;
+                Bits thisGame = WinState[Day-1] ;
                 move[0] = Possible[ip] ; // actual move (and poisoning)
-                if ( calcMove( move, WinState[Day-1], &newT, WinState[Day] ) == won ) {
+
+                // clear moves
+                thisGame &= ~move[0] ;
+
+                // calculate where they jump to
+                for ( int j=0 ; j<holes ; ++j ) {
+                    if ( getB( thisGame, j ) ) { // fox currently
+                         newGame |= Jumpspace[j] ; // jumps to here
+                    }
+                }
+
+                // do poisoning
+                for ( int p=0 ; p<poison ; ++p ) {
+                    newGame &= ~move[p] ;
+                }
+
+                // Match target?
+                if ( newGame == WinState[Day] ) {
+                    printf("FixupMoves found Day=%d\n",Day);
                     WinMove[Day] = move[0] ;
                     break ;
                 }
@@ -610,7 +634,7 @@ int setPscan( int index, int start, int level, Bits pattern ) {
 }
 
 Bits * makePossible( void ) {
-    // Create bitmaps of all possible moves (permutations of visits bits in holes spae
+    // Create bitmaps of all possible moves (permutations of visits bits in holes slots)
     uint64_t top,bot;
     int v = visits ;
 
