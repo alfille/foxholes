@@ -38,6 +38,7 @@ int poison = 0;
 int visits = 1;
 int update = 0 ;
 int offset = 0 ;
+int increment = 1 ;
 int circle = 0 ;
 int maxday = 1000000 ;
 int searchCount = 0 ;
@@ -81,6 +82,7 @@ void help( void ) {
     printf("\t-m 10\tmaximum number of days allowed") ;
     printf("\n") ;
     printf("\t-u\tperiodic Updates\n") ;
+    printf("\t-I 1\tbacksolve initial increment\n") ;
     printf("\t-h\thelp\n") ;
     exit(0) ;
 }
@@ -220,6 +222,19 @@ void showBits( Bits bb ) {
     }
 }
 
+void showDoubleBits( Bits bb, Bits cc ) {
+    for ( int y=0 ; y<ylength ; ++y ) {
+        for ( int x=0 ; x<xlength ; ++x ) {
+            printf( getB( bb, I(x,y) ) ? "X|":" |" );
+        }
+        printf("  ##  ");
+        for ( int x=0 ; x<xlength ; ++x ) {
+            printf( getB( cc, I(x,y) ) ? "X|":" |" );
+        }
+        printf("\n");
+    }
+}
+
 #define gamestate_length 0x100000
 #define INC(x) ( ((x)+1) % gamestate_length )
 #define DEC(x) ( ((x)+gamestate_length-1) % gamestate_length )
@@ -255,7 +270,7 @@ void makeBack( void ) {
     backSolve.next = 0 ;
     backSolve.entries[0].start = 0 ;
     backSolve.addDay = 1 ;
-    backSolve.increment = 1 ;
+    backSolve.increment = increment ;
 }
 
 int victoryDay = 0 ;
@@ -476,9 +491,12 @@ searchState startDays( void ) {
     printf( "Exceeded %d days.\n",maxday ) ;
     return lost ;
 }
-searchState restartDays( int day, Bits current, Bits target ) {
+searchState restartDays( int lastDay, int thisDay ) {
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
+
+	Bits current = WinState[lastDay] ;
+	Bits target = WinState[thisDay] ;
 
     newNext = 0 ;
     newStart = newNext ;
@@ -499,7 +517,7 @@ searchState restartDays( int day, Bits current, Bits target ) {
     
     // set solver state
     makeBack() ;
-    backSolve.addDay = day+1 ;
+    backSolve.addDay = lastDay+1 ;
 
     // set Initial position
     Tries[newNext].game = current ;
@@ -508,7 +526,7 @@ searchState restartDays( int day, Bits current, Bits target ) {
     ++newNext ;
     
     // Now loop through days
-    for ( int Day=day ; Day<=victoryDay ; ++Day ) {
+    for ( int Day=lastDay+1 ; Day<=thisDay ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(newNext,newStart),iPossible);
         switch ( dayPass( Day, target ) ) {
             case won:
@@ -528,39 +546,33 @@ searchState restartDays( int day, Bits current, Bits target ) {
 }
 
 void fixupTrace( void ) {
-    while (True) {
-        // any unsolved?
-        int all_solved = True ;
-        for ( int d=1 ; d<=victoryDay ; ++d ) {
-            if ( WinState[d] == Game_all ) {
-                printf("testing %d\n",d);
-                showBits(WinState[d]);
-                all_solved = False ;
-                break ;
-            }
-        }
-        if ( all_solved ) {
-            return ;
-        }
-        // start search
-        makeGamesMap() ; // clear bits
+	// any unsolved?
+	int unsolved ;
+    do {
+		unsolved = False ;
         int lastDay = 0 ;
         int gap = False ;
+
         for ( int d=1 ; d<victoryDay ; ++d ) { // go through days
             if ( WinState[d] == Game_all ) {
                 // unknown solution
                 gap = True ;
+                if ( ! unsolved ) {
+					makeGamesMap() ; // clear bits
+					unsolved = True ;
+				}
             } else {
                 // known solution
                 if ( gap ) {
                     // solution after unknown gap
-                    restartDays( lastDay, WinState[lastDay], WinState[d] );
-                }
+                    restartDays( lastDay, d );
+                }    printf("\t-u\tperiodic Updates\n") ;
+
                 gap = False ;
                 lastDay = d ;
             }
         }
-    }
+    } while ( unsolved ) ;
 }
 
 void fixupMoves( void ) {
@@ -664,7 +676,7 @@ int main( int argc, char **argv )
 {
     // Arguments
     int c;
-    while ( (c = getopt( argc, argv, "ocguhl:L:w:W:p:P:v:V:m:M:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "ocguhl:L:w:W:p:P:v:V:m:M:i:I:" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help() ;
@@ -709,6 +721,13 @@ int main( int argc, char **argv )
         case 'c':
         case 'C':
             circle = True ;
+            break;
+        case 'i':
+        case 'I':
+            increment = atoi(optarg) ;
+            if ( increment < 1 ) {
+				increment = 1 ;
+			}
             break;
         case 'g':
         case 'G':
@@ -784,11 +803,7 @@ int main( int argc, char **argv )
     }
 
     for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-        printf("Day %d\n",d);
-        showBits( WinState[d] ) ;
-    }
-    for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-        printf("Move %d\n",d);
-        showBits( WinMove[d] ) ;
+        printf("Day%3d Move ## Game \n",d);
+        showDoubleBits( WinMove[d],WinState[d] ) ;
     }
 }
