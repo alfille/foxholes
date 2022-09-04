@@ -615,7 +615,9 @@ void fixupMoves( void ) {
 
         // solve unknown moves
         if ( victoryMove[Day] == Game_none ) {
-            printf("Fixup Moves Day %d\n",Day);
+			if ( update ) {
+				printf("Fixup Moves Day %d\n",Day);
+			}
             for ( int ip=0 ; ip<iPremadeMoves ; ++ip ) { // each possible move
                 Bits newGame = Game_none ;
                 Bits thisGame = victoryGame[Day-1] ;
@@ -651,15 +653,16 @@ void LowPoison( void ) {
         case won:
             fixupTrace() ;
             fixupMoves() ;
+            printf("\n");
+            printf("Winning Strategy:\n");
+			for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
+				printf("Day%3d Move ## Game \n",d);
+				showDoubleBits( victoryMove[d],victoryGame[d] ) ;
+			}
             break ;
         default:
             break ;
     
-    }
-
-    for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-        printf("Day%3d Move ## Game \n",d);
-        showDoubleBits( victoryMove[d],victoryGame[d] ) ;
     }
 }
 
