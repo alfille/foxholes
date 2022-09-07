@@ -1,13 +1,23 @@
 # Foxholes
 
+My friend, DSK, sent me the following puzzle:
+
 ![Foxhole puzzle](images/foz-puzzle.jpeg)
 
-## Quick link:
-[Foxholes](https://alfille.github.io/foxholes.github.io/)
+The solution is clever -- brute force doesn't work. The point is to find a fox however the fox moves. This will be an explanation for the process and development of both:
+
+* Playable web game, including many game variants
+* A game solver
+
+
+## Quick link to play the game:
+[Foxholes](https://alfille.github.io/doublefox.github.io/)
+
+## In
 
 ## Summary
 
-This program is a way to test strategies.
+This program is a way to test strategies. 
 
 ## Screenshots
 

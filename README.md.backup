@@ -1,13 +1,20 @@
 # Foxholes
 
+My friend, DSK, sent me the following puzzle:
+
 ![Foxhole puzzle](images/foz-puzzle.jpeg)
 
+The solution is clever -- brute force doesn't work. The point is to find a fox however the fox moves. This will be an explanation for the process and development of both:
+
+* Playable web game, including many game variants
+* A game solver
+
 ## Quick link:
-[Foxholes](https://alfille.github.io/foxholes.github.io/)
+[Foxholes](https://alfille.github.io/doublefox.github.io/)
 
 ## Summary
 
-This program is a way to test strategies.
+This program is a way to test strategies. 
 
 ## Screenshots
 
@@ -22,7 +29,7 @@ Choosing probabilities adds the chance that a randomly placed and moving fox is 
 
 ![](images/FHmove.png)
 You actually play the game by choosing to inspect a hole (one of the "?" buttons).
-The next row shows where the un
+The next row shows where the uncaught foxes could move to.
 
 
 ## Platform
