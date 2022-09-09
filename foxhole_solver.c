@@ -637,18 +637,9 @@ void fixupTrace( void ) {
 }
 
 void fixupMoves( void ) {
-    Bits move[poison] ; 
-    for ( int p=0 ; p<poison ; ++p ) {
-        move[p] = Game_none ;
-    }
+    Bits move[1] ; // at most one poison day
     
     for ( int Day=1 ; Day < victoryDay ; ++Day ) {
-        // fill poison
-        for ( int p=1 ; p<poison ; ++p ) {
-            move[p] = move[p-1] ;
-        }
-        move[0] = victoryMove[Day] ;
-
         // solve unknown moves
         if ( victoryMove[Day] == Game_none ) {
             if ( update ) {
@@ -670,8 +661,8 @@ void fixupMoves( void ) {
                 }
 
                 // do poisoning
-                for ( int p=0 ; p<poison ; ++p ) {
-                    newGame &= ~move[p] ;
+                if ( poison ) {
+                    newGame &= ~move[0] ;
                 }
 
                 // Match target?
@@ -685,20 +676,20 @@ void fixupMoves( void ) {
 }
 
 void LowPoison( void ) {
-        switch (LowPoisonCreate()) { // start searching through days until a solution is found (will be fastest by definition)
-        case won:
-            fixupTrace() ;
-            fixupMoves() ;
-            printf("\n");
-            printf("Winning Strategy:\n");
-            for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-                printf("Day%3d Move ## Game \n",d);
-                showDoubleBits( victoryMove[d],victoryGame[d] ) ;
-            }
-            break ;
-        default:
-            break ;
-    
+    // only for poison <= 1    
+    switch (LowPoisonCreate()) { // start searching through days until a solution is found (will be fastest by definition)
+    case won:
+        fixupTrace() ; // fill in game path
+        fixupMoves() ; // fill in moves
+        printf("\n");
+        printf("Winning Strategy:\n");
+        for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
+            printf("Day%3d Move ## Game \n",d);
+            showDoubleBits( victoryMove[d],victoryGame[d] ) ;
+        }
+        break ;
+    default:
+        break ;    
     }
 }
 
@@ -794,6 +785,7 @@ searchState LowPoisonDay( int Day, Bits target ) {
     }
     return gameListNext != gameListStart ? forward : lost ;
 }
+
 
 void HighPoison( void ) {
     HighPoisonCreate() ;
