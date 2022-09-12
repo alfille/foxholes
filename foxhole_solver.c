@@ -29,6 +29,8 @@ typedef int Move ;
 
 typedef enum { False, True } Bool ;
 
+typedef enum { Circle, Grid, Triangle } Geometry ;
+
 // Globals from command line
 int xlength = 5;
 int ylength = 1;
@@ -37,7 +39,7 @@ int poison = 0;
 int visits = 1;
 Bool update = 0 ;
 Bool offset = False ;
-Bool circle = False ;
+Geometry geo = Circle ;
 int maxday = 1000000 ;
 int searchCount = 0 ;
 Bool json = False ;
@@ -129,6 +131,7 @@ typedef enum {
 // function prototypes
 int main( int argc, char **argv ) ;
 void help( void ) ;
+char * Geo( Geometry g ) ;
 void printStatus() ;
 
 void gamesMapCreate() ;
@@ -166,7 +169,7 @@ int main( int argc, char **argv )
     // Parse Arguments
     int c ;
     opterr = 0 ; // suppress option error display (to allow optional arguments)
-    while ( (c = getopt( argc, argv, "ocguhl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "oOcCtTgGuUhHl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help() ;
@@ -210,11 +213,15 @@ int main( int argc, char **argv )
             break ;
         case 'c':
         case 'C':
-            circle = True ;
+            geo = Circle ;
             break;
         case 'g':
         case 'G':
-            circle = False ;
+            geo = Grid ;
+            break ;
+        case 't':
+        case 'T':
+            geo = Triangle ;
             break ;
         case 'u':
         case 'U':
@@ -259,7 +266,16 @@ int main( int argc, char **argv )
     // Check parameters and fix or exit
     
     // total holes
-    holes = xlength * ylength ;
+    switch( geo ) {
+		case Circle:
+		case Grid:
+			holes = xlength * ylength ;
+			break ;
+		case Triangle:
+			ylength = xlength ;
+			holes = xlength * ( xlength+1) / 2 ;
+			break ;
+	}
     if ( holes > MAXHOLES ) {
         fprintf(stderr,"Length %d X Width %d = Total %d\n\tGreater than max %d\n",xlength,ylength,holes,MAXHOLES);
         exit(1);
@@ -340,12 +356,25 @@ void help( void ) {
     exit(0) ;
 }
 
+char * Geo( Geometry g ) {
+	switch (g) {
+		case Circle:
+			return "circle";
+		case Triangle:
+			return "triangle";
+		case Grid:
+			return "grid";
+		default:
+			return "unknown_geometry";
+		}
+}
+
 void printStatus() {
     printf("Foxhole32 solver -- {c} 2022 Paul H Alfille\n");
     printf("\n");
     printf("Length %d X Width %d\n",xlength, ylength);
     printf("\t total %d holes \n",holes);
-    printf(circle?"Circle geometry\n":"Grid geometry\n");
+    printf("Geometry: %s\n",Geo(geo));
     printf(offset?"\toffset holes\n":"\tno offset\n");
     printf("\n");
     printf("%d holes visited per day\n",visits);
@@ -383,76 +412,117 @@ void jumpHolesCreate() {
         for ( int x=0 ; x<xlength ; ++x ) { // horizontal
             Bits * J = &jumpHoles[x + xlength*y] ; // bitmap to be constructed
             *J = 0 ; // clear it first
-            if ( circle ) { // circle geometry -- right/left wraps around
-                if ( offset ) { // offset circle
-                    setB( *J, W(x-1,y) ); // Left
-                    setB( *J, W(x+1,y) ) ; // Right
-                    if ( y > 0 ) {
-                        setB( *J, W(x+(y&1)-1,y-1) ); // AboveL
-                        setB( *J, W(x+(y&1)  ,y-1) ) ; // AboveR
-                    }
-                    if ( y < ylength-1 ) { // below
-                        setB( *J, W(x+(y&1)-1,y+1) ); // BelowL
-                        setB( *J, W(x+(y&1)  ,y+1) ) ; // BelowR
-                    }
-                } else { // normal circle (wrap x, not y)
-                    setB( *J, W(x-1,y) ); // Left
-                    setB( *J, W(x+1,y) ) ; // Right
-                    if ( y > 0 ) {
-                        setB( *J, I(x,y-1) ); // Above
-                    }
-                    if ( y < ylength-1 ) {
-                        setB( *J, I(x,y+1) ); // Below
-                    }
-                }
-            } else { // grid geometry -- right/left limited by boundaries
-                if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
-                    if ( x > 0 ) {
-                        setB( *J, I(x-1,y) ); // Left
-                    }
-                    if ( x < xlength-1 ) {
-                        setB( *J, I(x+1,y) ) ; // Right
-                    }
-                    if ( y > 0 ) { // above
-                        if ( y&1 ) { // odd row
-                            setB( *J, I(x,y-1) ); // AboveL 
-                            if ( x < xlength-1 ) {
-                                setB( *J, I(x+1,y-1) ); // AboveR
-                            }
-                        } else { // even row
-                            if ( x >0 ) {
-                                setB( *J, I(x-1,y-1) ); // AboveL
-                            }
-                            setB( *J, I(x,y-1) ); // AboveR
-                        }
-                    }
-                    if ( y < ylength-1 ) { // below
-                        if ( y&1 ) { // odd row
-                            setB( *J, I(x,y+1) ); // AboveL
-                            if ( x < xlength-1 ) {
-                                setB( *J, I(x+1,y+1) ); // AboveR
-                            }
-                        } else { // even row
-                            if ( x >0 ) {
-                                setB( *J, I(x-1,y+1) ); // AboveL
-                            }
-                            setB( *J, I(x,y+1) ); // AboveR
-                        }
-                    }
-                } else { // normal grid (left, right, up, down) not past edges
-                    if ( x > 0 ) {
-                        setB( *J, I(x-1,y) );
-                    }
-                    if ( x < xlength-1 ) {
-                        setB( *J, I(x+1,y) ) ;
-                    }
-                    if ( y > 0 ) {
-                        setB( *J, I(x,y-1) );
-                    }
-                    if ( y < ylength-1 ) {
-                        setB( *J, I(x,y+1) );
-                    }
-                }
+            switch ( geo ) {
+				case Circle:
+					// circle geometry -- right/left wraps around
+					if ( offset ) { // offset circle
+						setB( *J, W(x-1,y) ); // Left
+						setB( *J, W(x+1,y) ) ; // Right
+						if ( y > 0 ) {
+							setB( *J, W(x+(y&1)-1,y-1) ); // AboveL
+							setB( *J, W(x+(y&1)  ,y-1) ) ; // AboveR
+						}
+						if ( y < ylength-1 ) { // below
+							setB( *J, W(x+(y&1)-1,y+1) ); // BelowL
+							setB( *J, W(x+(y&1)  ,y+1) ) ; // BelowR
+						}
+					} else { // normal circle (wrap x, not y)
+						setB( *J, W(x-1,y) ); // Left
+						setB( *J, W(x+1,y) ) ; // Right
+						if ( y > 0 ) {
+							setB( *J, I(x,y-1) ); // Above
+						}
+						if ( y < ylength-1 ) {
+							setB( *J, I(x,y+1) ); // Below
+						}
+					}
+					break ;
+				case Grid:
+					// grid geometry -- right/left limited by boundaries
+					if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
+						if ( x > 0 ) {
+							setB( *J, I(x-1,y) ); // Left
+						}
+						if ( x < xlength-1 ) {
+							setB( *J, I(x+1,y) ) ; // Right
+						}
+						if ( y > 0 ) { // above
+							if ( y&1 ) { // odd row
+								setB( *J, I(x,y-1) ); // AboveL 
+								if ( x < xlength-1 ) {
+									setB( *J, I(x+1,y-1) ); // AboveR
+								}
+							} else { // even row
+								if ( x >0 ) {
+									setB( *J, I(x-1,y-1) ); // AboveL
+								}
+								setB( *J, I(x,y-1) ); // AboveR
+							}
+						}
+						if ( y < ylength-1 ) { // below
+							if ( y&1 ) { // odd row
+								setB( *J, I(x,y+1) ); // AboveL
+								if ( x < xlength-1 ) {
+									setB( *J, I(x+1,y+1) ); // AboveR
+								}
+							} else { // even row
+								if ( x >0 ) {
+									setB( *J, I(x-1,y+1) ); // AboveL
+								}
+								setB( *J, I(x,y+1) ); // AboveR
+							}
+						}
+					} else { // normal grid (left, right, up, down) not past edges
+						if ( x > 0 ) {
+							setB( *J, I(x-1,y) );
+						}
+						if ( x < xlength-1 ) {
+							setB( *J, I(x+1,y) ) ;
+						}
+						if ( y > 0 ) {
+							setB( *J, I(x,y-1) );
+						}
+						if ( y < ylength-1 ) {
+							setB( *J, I(x,y+1) );
+						}
+					}
+				break ;
+				case Triangle:
+					// triangle geometry -- right/left limited by boundaries
+					if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
+						if ( x > 0 ) {
+							setB( *J, I(x-1,y) ); // Left
+						}
+						if ( x < xlength-1 ) {
+							setB( *J, I(x+1,y) ) ; // Right
+						}
+						if ( y > 0 ) { // above
+							if ( x>0 ) { 
+								setB( *J, I(x-1,y-1) ); // AboveL
+							} 
+							if ( x < y ) {
+									setB( *J, I(x+1,y-1) ); // AboveR
+							}
+						}
+						if ( y < ylength-1 ) { // below
+							setB( *J, I(x,y+1) ); // BelowL
+							setB( *J, I(x+1,y+1) ); // BelowR
+						}
+					} else { // normal triangle (left, right, up, down) not past edges
+						if ( x > 0 ) {
+							setB( *J, I(x-1,y) );
+						}
+						if ( x < y ) {
+							setB( *J, I(x+1,y) ) ;
+						}
+						if ( y > x ) {
+							setB( *J, I(x,y-1) );
+						}
+						if ( y < ylength-1 ) {
+							setB( *J, I(x,y+1) );
+						}
+					}
+				break ;
             }
         }
     }
@@ -942,7 +1012,7 @@ void Json_out( void ) {
         fprintf(jfile, QQ(width)":%d,\n",  ylength);
         fprintf(jfile, QQ(visits)":%d,\n", visits );
         fprintf(jfile, QQ(offset)":%s,\n", offset?"true":"false" );
-        fprintf(jfile, QQ(geometry)":%s,\n", circle? QQ(circle) : QQ(grid) );
+        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", Geo(geo) );
         if ( victoryDay >= 0 ) {
             fprintf(jfile, QQ(days)":%d,\n", victoryDay );
             if ( poison < 2 ) { // low poison, backtrace possible
