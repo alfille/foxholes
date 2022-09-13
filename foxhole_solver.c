@@ -76,6 +76,8 @@ Map GamesMap[GAMESIZE]; // bitmap of all possible game states
 #define I(xx,yy) ( (xx) + (yy)*xlength )
 // index from x,y but wrap x if past end (circle)
 #define W(xx,yy) ( I( ((xx)+xlength)%xlength, (yy) ) )
+// Index into Triangle
+#define T(xx,yy) ( (yy)*((yy)+1)/2+(xx) )
 
 Bits * jumpHoles = NULL ; // bitmap for moves from a hold indexed by that hole
 
@@ -131,7 +133,7 @@ typedef enum {
 // function prototypes
 int main( int argc, char **argv ) ;
 void help( void ) ;
-char * Geo( Geometry g ) ;
+char * geoName( Geometry g ) ;
 void printStatus() ;
 
 void gamesMapCreate() ;
@@ -140,13 +142,13 @@ void jumpHolesCreate() ;
 void premadeMovesCreate( void ) ;
 int premadeMovesRecurse( int index, int start, int level, Bits pattern ) ;
 
-void HighPoison( void ) ;
-searchState HighPoisonCreate( void ) ;
-searchState HighPoisonDay( int Day, Bits target ) ;
+void highPoison( void ) ;
+searchState highPoisonCreate( void ) ;
+searchState highPoisonDay( int Day, Bits target ) ;
 
-void LowPoison( void ) ;
-searchState LowPoisonCreate( void ) ;
-searchState LowPoisonDay( int Day, Bits target ) ;
+void lowPoison( void ) ;
+searchState lowPoisonCreate( void ) ;
+searchState lowPoisonDay( int Day, Bits target ) ;
 
 searchState calcMove( Bits* move, Bits thisGame, Bits *new_game, Bits target ) ;
 
@@ -161,7 +163,7 @@ void fixupMoves( void ) ;
 void showBits( Bits bb ) ;
 void showDoubleBits( Bits bb, Bits cc ) ;
 
-void Json_out( void ) ;
+void jsonOut( void ) ;
 
 
 int main( int argc, char **argv )
@@ -297,6 +299,7 @@ int main( int argc, char **argv )
     printStatus();    
     
     // Set all bits and saet up pre-computed arrays
+    Game_all = 0;
     for ( int h=0 ; h<holes ; ++h ) {
         setB( Game_all, h ) ;
     }
@@ -319,15 +322,15 @@ int main( int argc, char **argv )
     // Execu7t search (different if more than 1 poisoned day)
     if ( poison < 2 ) {
         // Does full backtrace to show full winning strategy
-        LowPoison() ;
+        lowPoison() ;
     } else {
         // Just shows shortest time
-        HighPoison() ;
+        highPoison() ;
     }
     
     // print json
     if (json) {
-        Json_out() ;
+        jsonOut() ;
         if ( jsonfile ) {
             fclose( jfile ) ;
         }
@@ -356,7 +359,7 @@ void help( void ) {
     exit(0) ;
 }
 
-char * Geo( Geometry g ) {
+char * geoName( Geometry g ) {
 	switch (g) {
 		case Circle:
 			return "circle";
@@ -374,7 +377,7 @@ void printStatus() {
     printf("\n");
     printf("Length %d X Width %d\n",xlength, ylength);
     printf("\t total %d holes \n",holes);
-    printf("Geometry: %s\n",Geo(geo));
+    printf("Geometry: %s\n",geoName(geo));
     printf(offset?"\toffset holes\n":"\tno offset\n");
     printf("\n");
     printf("%d holes visited per day\n",visits);
@@ -407,13 +410,14 @@ void jumpHolesCreate() {
      *
      * */
         
+    Bits * J = jumpHoles ; // bitmap to be constructed
+
     // loop though for all current locations
-    for ( int y=0 ; y<ylength ; ++y ) { // vertical
-        for ( int x=0 ; x<xlength ; ++x ) { // horizontal
-            Bits * J = &jumpHoles[x + xlength*y] ; // bitmap to be constructed
-            *J = 0 ; // clear it first
-            switch ( geo ) {
-				case Circle:
+    switch ( geo ) {
+        case Circle:
+            for ( int y=0 ; y<ylength ; ++y ) { // vertical
+                for ( int x=0 ; x<xlength ; ++x ) { // horizontal
+                    *J = 0 ; // clear it first
 					// circle geometry -- right/left wraps around
 					if ( offset ) { // offset circle
 						setB( *J, W(x-1,y) ); // Left
@@ -436,9 +440,15 @@ void jumpHolesCreate() {
 							setB( *J, I(x,y+1) ); // Below
 						}
 					}
-					break ;
-				case Grid:
-					// grid geometry -- right/left limited by boundaries
+                    ++J;
+                }
+            }
+            break ;
+        case Grid:
+            // grid geometry -- right/left limited by boundaries
+            for ( int y=0 ; y<ylength ; ++y ) { // vertical
+                for ( int x=0 ; x<xlength ; ++x ) { // horizontal
+                    *J = 0 ; // clear it first
 					if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
 						if ( x > 0 ) {
 							setB( *J, I(x-1,y) ); // Left
@@ -486,69 +496,103 @@ void jumpHolesCreate() {
 							setB( *J, I(x,y+1) );
 						}
 					}
-				break ;
-				case Triangle:
-					// triangle geometry -- right/left limited by boundaries
+                    J++;
+                }
+            }
+            break ;
+        case Triangle:
+            // triangle geometry -- right/left limited by boundaries
+            for ( int y=0 ; y<xlength ; ++y ) { // vertical
+                for ( int x=0 ; x<=y ; ++x ) { // horizontal
+                    *J = 0 ; // clear it first
 					if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
 						if ( x > 0 ) {
-							setB( *J, I(x-1,y) ); // Left
+							setB( *J, T(x-1,y) ); // Left
 						}
-						if ( x < xlength-1 ) {
-							setB( *J, I(x+1,y) ) ; // Right
+						if ( x < y ) {
+							setB( *J, T(x+1,y) ) ; // Right
 						}
 						if ( y > 0 ) { // above
 							if ( x>0 ) { 
-								setB( *J, I(x-1,y-1) ); // AboveL
+								setB( *J, T(x-1,y-1) ); // AboveL
 							} 
 							if ( x < y ) {
-									setB( *J, I(x+1,y-1) ); // AboveR
+									setB( *J, T(x,y-1) ); // AboveR
 							}
 						}
 						if ( y < ylength-1 ) { // below
-							setB( *J, I(x,y+1) ); // BelowL
-							setB( *J, I(x+1,y+1) ); // BelowR
+							setB( *J, T(x,y+1) ); // BelowL
+							setB( *J, T(x+1,y+1) ); // BelowR
 						}
 					} else { // normal triangle (left, right, up, down) not past edges
 						if ( x > 0 ) {
-							setB( *J, I(x-1,y) );
+							setB( *J, T(x-1,y) );
 						}
 						if ( x < y ) {
-							setB( *J, I(x+1,y) ) ;
-						}
-						if ( y > x ) {
-							setB( *J, I(x,y-1) );
+							setB( *J, T(x+1,y) ) ;
+							setB( *J, T(x,y-1) );
 						}
 						if ( y < ylength-1 ) {
-							setB( *J, I(x,y+1) );
+							setB( *J, T(x,y+1) );
 						}
 					}
-				break ;
+                    ++J ;
+                }
             }
-        }
+            break ;
     }
 }
-        
+
 void showBits( Bits bb ) {
-    for ( int y=0 ; y<ylength ; ++y ) {
-        for ( int x=0 ; x<xlength ; ++x ) {
-            printf( getB( bb, I(x,y) ) ? "X|":" |" );
-        }
-        printf("\n");
+    switch (geo) {
+        case Triangle:
+            for ( int y=0 ; y<ylength ; ++y ) {
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( (x<=y) && getB( bb, T(x,y) ) ? "X|":" |" );
+                }
+                printf("\n");
+            }
+        break ;
+        default:
+            for ( int y=0 ; y<ylength ; ++y ) {
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( getB( bb, I(x,y) ) ? "X|":" |" );
+                }
+                printf("\n");
+            }
+            break ;
     }
 }
 
 void showDoubleBits( Bits bb, Bits cc ) {
-    for ( int y=0 ; y<ylength ; ++y ) {
-        for ( int x=0 ; x<xlength ; ++x ) {
-            printf( getB( bb, I(x,y) ) ? "X|":" |" );
-        }
-        printf("  ##  ");
-        for ( int x=0 ; x<xlength ; ++x ) {
-            printf( getB( cc, I(x,y) ) ? "X|":" |" );
-        }
-        printf("\n");
+    switch( geo ) {
+        case Triangle:
+            for ( int y=0 ; y<ylength ; ++y ) {
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( (x<=y) && getB( bb, T(x,y) ) ? "X|":" |" );
+                }
+                printf("  ##  ");
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( (x<=y) && getB( cc, I(x,y) ) ? "X|":" |" );
+                }
+                printf("\n");
+            }
+            break ;
+        default:
+            for ( int y=0 ; y<ylength ; ++y ) {
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( getB( bb, I(x,y) ) ? "X|":" |" );
+                }
+                printf("  ##  ");
+                for ( int x=0 ; x<xlength ; ++x ) {
+                    printf( getB( cc, I(x,y) ) ? "X|":" |" );
+                }
+                printf("\n");
+            }
+            break ;
     }
 }
+
 
 searchState calcMove( Bits* move, Bits thisGame, Bits *new_game, Bits target ) {
     if ( update ) {
@@ -659,7 +703,7 @@ void backTraceRestart( int lastDay, int thisDay ) {
     
     // Now loop through days
     for ( int Day=lastDay+1 ; Day<=thisDay ; ++Day ) {
-        switch ( LowPoisonDay( Day, target ) ) {
+        switch ( lowPoisonDay( Day, target ) ) {
             case won:
             case lost:
                 return ;
@@ -745,9 +789,9 @@ void fixupMoves( void ) {
     }
 }
 
-void LowPoison( void ) {
+void lowPoison( void ) {
     // only for poison <= 1    
-    switch (LowPoisonCreate()) { // start searching through days until a solution is found (will be fastest by definition)
+    switch (lowPoisonCreate()) { // start searching through days until a solution is found (will be fastest by definition)
     case won:
         fixupTrace() ; // fill in game path
         fixupMoves() ; // fill in moves
@@ -763,19 +807,13 @@ void LowPoison( void ) {
     }
 }
 
-searchState LowPoisonCreate( void ) {
+searchState lowPoisonCreate( void ) {
     // Solve for Poison <= 1
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
     gameListNext = 0 ;
     gameListStart = gameListNext ;
-    
-    // create an all-fox state
-    Game_all = 0 ; // clear bits
-    for ( int h=0 ; h<holes ; ++h ) { // set all holes bits
-        setB( Game_all, h ); // all holes have foxes
-    }
     
     // Set winning path to unknown
     for ( int d=0 ; d<MaxDays ; ++d ) {
@@ -795,7 +833,7 @@ searchState LowPoisonCreate( void ) {
     // Now loop through days
     for ( int Day=1 ; Day < maxday ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(gameListNext,gameListStart),iPremadeMoves);
-        switch ( LowPoisonDay(Day,Game_none) ) {
+        switch ( lowPoisonDay(Day,Game_none) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
@@ -814,7 +852,7 @@ searchState LowPoisonCreate( void ) {
     return lost ;
 }
 
-searchState LowPoisonDay( int Day, Bits target ) {
+searchState lowPoisonDay( int Day, Bits target ) {
     // poison <= 1
     
     Bits move[1] ; // for poisoning
@@ -857,11 +895,11 @@ searchState LowPoisonDay( int Day, Bits target ) {
 }
 
 
-void HighPoison( void ) {
-    HighPoisonCreate() ;
+void highPoison( void ) {
+    highPoisonCreate() ;
 }
 
-searchState HighPoisonCreate( void ) {
+searchState highPoisonCreate( void ) {
     // Solve Poison >1
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
@@ -880,12 +918,6 @@ searchState HighPoisonCreate( void ) {
         gameListPoison[gameListStart].move[p-1] = 0 ; // no prior moves
     }
 
-    // create an all-fox state
-    Game_all = 0 ; // clear bits
-    for ( int h=0 ; h<holes ; ++h ) { // set all holes bits
-        setB( Game_all, h ); // all holes have foxes
-    }
-    
     // set Initial position
     gameList[gameListNext].game = Game_all ;
     setB64( gameList[gameListNext].game ) ; // flag this configuration
@@ -895,7 +927,7 @@ searchState HighPoisonCreate( void ) {
     // Now loop through days
     for ( int Day=1 ; Day < maxday ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(gameListNext,gameListStart),iPremadeMoves);
-        switch ( HighPoisonDay(Day,Game_none) ) {
+        switch ( highPoisonDay(Day,Game_none) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
@@ -910,7 +942,7 @@ searchState HighPoisonCreate( void ) {
     return lost ;
 }
 
-searchState HighPoisonDay( int Day, Bits target ) {
+searchState highPoisonDay( int Day, Bits target ) {
     typedef struct {
         Bits move[poison-1] ; 
     } Pstruct ;
@@ -1005,14 +1037,14 @@ void premadeMovesCreate( void ) {
 
 #define QQ(x) "\"" #x "\"" 
 
-void Json_out( void ) {
+void jsonOut( void ) {
     // output settings and moves
     fprintf(jfile,"{");
         fprintf(jfile, QQ(length)":%d,\n", xlength);
         fprintf(jfile, QQ(width)":%d,\n",  ylength);
         fprintf(jfile, QQ(visits)":%d,\n", visits );
         fprintf(jfile, QQ(offset)":%s,\n", offset?"true":"false" );
-        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", Geo(geo) );
+        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", geoName(geo) );
         if ( victoryDay >= 0 ) {
             fprintf(jfile, QQ(days)":%d,\n", victoryDay );
             if ( poison < 2 ) { // low poison, backtrace possible

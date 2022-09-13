@@ -1,17 +1,25 @@
 CC = gcc
-NAME = foxhole_solver
+NAMES = foxhole_solver foxhole64_solver
 
 CFLAGS = -W -Wall -Wextra -pedantic -O3
 
 OBJS = $(NAME).o
 
+all: $(NAMES)
+
+$(NAMES): $(NAME=$(.TARGET))
+
+$(NAME): $(OBJS)
+	$(CC) $(CFLAGS) -o $(.TARGET) $(OBJS)
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
-  
-$(NAME): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 clean:
-	rm -f *.o
+	rm -f *.core
 	rm -f *~
-	rm -f $(NAME)
+	rm -f $(NAMES) $(NAMES).o
+
+run:
+	./$(NAME)
+	
