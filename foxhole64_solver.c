@@ -22,7 +22,7 @@ typedef uint64_t Bits;
 
 #define STORESIZE 100000000
 Bits Store[STORESIZE] ;
-#define UNSORTSIZE 1000
+#define UNSORTSIZE 25
 
 
 struct {
@@ -416,15 +416,15 @@ int compare(const void* numA, const void* numB)
 }
 
 void gamesSeenAdd( Bits g ) {
-    if ( Loc.free == 0 ) {
-        fprintf(stderr, "Memory exhausted adding games seen\n");
-        exit(1);
-    }
-    -- Loc.free ;
     Loc.Unsorted[Loc.iUnsorted] = g ;
     ++Loc.iUnsorted ;
     if ( Loc.iUnsorted >= UNSORTSIZE ) {
-        printf("Sorting\n");
+        Loc.free -= Loc.iUnsorted ;
+        if ( Loc.free <= UNSORTSIZE ) {
+            fprintf(stderr, "Memory exhausted adding games seen\n");
+            exit(1);
+        }
+        //printf("Sorting\n");
         Loc.iSorted += Loc.iUnsorted ;
         qsort( Loc.Sorted, Loc.iSorted, sizeof( Bits), compare );
         Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
