@@ -22,7 +22,7 @@ typedef uint64_t Bits;
 
 #define STORESIZE 100000000
 Bits Store[STORESIZE] ;
-#define UNSORTSIZE 25
+#define UNSORTSIZE 50
 
 
 struct {
