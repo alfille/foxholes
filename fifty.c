@@ -5,7 +5,7 @@
 
 #define SIZE 50
 #define SIZE2 (SIZE*2)
-#define REP 1000
+#define REP 10000000
 
 /* ---------------
 Mersene Twister from https://github.com/ESultanik/mtwister
@@ -125,22 +125,32 @@ void permute( void ) {
 
 void show_permute() {
 	for ( int b; b<SIZE2 ; ++b ) {
-		printf("%3d",boxes[b]);
+		printf(" %3d",boxes[b]);
 	}
 	printf("\n");
+}
+
+int test2( void ) {
+	for ( int p = 0 ; p < SIZE2 ; ++p ) { // prisoners (use 0 index)
+		for ( int b=0 ; b< SIZE ; ++b ) {
+			printf( "b%di%d ",b,(SIZE*(p/SIZE))+(b%SIZE)); // sliding window
+		}
+		printf(" for prisoner %d\n",p);
+	}
 }
 
 int test( void ) {
 	for ( int p = 0 ; p < SIZE2 ; ++p ) { // prisoners (use 0 index)
 		int nf = 1 ; // not found ;
 		for ( int b=0 ; b< SIZE ; ++b ) {
-			if ( boxes[(p+b) % SIZE2] == p ) {
+//			if ( boxes[(p+b) % SIZE2] == p ) { // sliding window
+			if ( boxes[(SIZE*(p/SIZE))+(b%SIZE)] == p ) { // sliding window
 				nf = 0 ; 
 				break ;
 			}
 		}
 		if ( nf ) {
-			printf("%3d",p);
+			printf("%3d%s",p,(p>1)?"\n":"");
 			return 0 ; // not found
 		}
 	}
@@ -151,6 +161,7 @@ void main( void ) {
 	int successes = 0 ; // count of successful runs
 	load_boxes() ; // set up boxes array
 	Seed ;
+	//test2();
 	for ( int t=0 ; t<REP ; ++t ) {
 		permute();
 		//show_permute();
@@ -159,7 +170,7 @@ void main( void ) {
 			++successes ;
 		}
 	}
-	printf( "%d Rate = %g\n", successes, (0.0+successes)/REP ) ;
+	printf( "\n%d Rate = %g\n", successes, (0.0+successes)/REP ) ;
 }
 	
 			

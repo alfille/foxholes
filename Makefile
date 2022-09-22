@@ -1,5 +1,6 @@
 CC = gcc
 NAMES = foxhole_solver foxhole64_solver
+BINDIR = /usr/bin
 
 CFLAGS = -W -Wall -Wextra -pedantic -O3
 
@@ -11,9 +12,13 @@ $(NAMES): $(NAME=$(.TARGET))
 
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $(.TARGET) $(OBJS)
+	chmod +x $(NAME)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+install:
+	install -m 557 $(NAMES) $(BINDIR)
 
 clean:
 	rm -f *.core

@@ -9,8 +9,11 @@ The solution is clever -- brute force doesn't work. The point is to find a fox h
 * Playable web game, including many game variants
 * A game solver
 
-## Quick link:
+
+## Quick link to play the game:
 [Foxholes](https://alfille.github.io/doublefox.github.io/)
+
+## In
 
 ## Summary
 
@@ -43,3 +46,8 @@ Paul Alfille paul.alfille@gmail.com
 ## License
 
 MIT (free for any use)
+
+`>$ for l in {3..10}
+   do for w in {1..3}
+     do for v in {1..4} 
+     do ./foxhole_solver -l$l -w$w -v$v -j -c C.$l.$w.$v.j ; done ; done ; done`

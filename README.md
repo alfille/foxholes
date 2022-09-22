@@ -46,3 +46,13 @@ Paul Alfille paul.alfille@gmail.com
 ## License
 
 MIT (free for any use)
+
+```
+>$ for l in {3..10}
+   do for w in {1..3}
+     do for v in {1..4} 
+       do ./foxhole_solver -l$l -w$w -v$v -j -c C.$l.$w.$v.j
+       done
+     done
+   done
+```
