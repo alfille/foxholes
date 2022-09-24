@@ -53,7 +53,7 @@ FILE * jfile ;
 
 // Bit macros
 // 32 bit for games, moves, jumps
-#deefine long1 ( (uint32_t) 1 )
+#define long1 ( (uint32_t) 1 )
 #define setB( map, b ) map |= (long1 << (b))
 #define clearB( map, b ) map &= ~(long1 << (b))
 #define getB( map, b ) (((map) & (long1 << (b))) ? 1:0)

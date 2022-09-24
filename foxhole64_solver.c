@@ -105,7 +105,7 @@ int gameListNext ;
 struct {
     int day; // >=0 for success
     Bits_t game[MaxDays+1] ;
-    Bits_t move[MAyDays+1] ;
+    Bits_t move[MaxDays+1] ;
 } Victory ; 
 
 // structure holding backtracing info to recreate winning strategy
