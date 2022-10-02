@@ -41,7 +41,6 @@ int visits = 1;
 Bool_t update = 0 ;
 Connection_t connection = Rectangular ;
 Geometry_t geo = Circle ;
-int maxday = 1000000 ;
 int searchCount = 0 ;
 Bool_t json = False ;
 Bool_t jsonfile = False ;
@@ -178,7 +177,7 @@ int main( int argc, char **argv )
     // Parse Arguments
     int c ;
     opterr = 0 ; // suppress option error display (to allow optional arguments)
-    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:j:J:" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help() ;
@@ -240,14 +239,6 @@ int main( int argc, char **argv )
         case 'u':
         case 'U':
             update = True ;
-            break ;
-        case 'm':
-        case 'M':
-            maxday = atoi(optarg);
-            if ( maxday < 1 ) {
-                fprintf( stderr, "Maximum number of days allowed is too small\n" );
-                exit(1);
-            }
             break ;
         case 'j':
         case 'J':
@@ -365,7 +356,6 @@ void help( void ) {
     printf("\n") ;
     printf("\t-v 1\tholes Visited per day\n") ;
     printf("\t-p 0\tdays visited holes are Poisoned") ;
-    printf("\t-m 10\tmaximum number of days allowed") ;
     printf("\n") ;
     printf("\t-u\tperiodic Updates\n") ;
     printf("\t-h\thelp\n") ;
@@ -939,7 +929,7 @@ searchState lowPoisonCreate( void ) {
     ++gameListNext ;
     
     // Now loop through days
-    for ( int Day=1 ; Day < maxday ; ++Day ) {
+    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(gameListNext,gameListStart),iPremadeMoves);
         switch ( lowPoisonDay(Day,Game_none) ) {
             case won:
@@ -956,7 +946,7 @@ searchState lowPoisonCreate( void ) {
             backTraceAdd(Day) ;
         }
     }
-    printf( "Exceeded %d days.\n",maxday ) ;
+    printf( "Exceeded %d days.\n",MaxDays ) ;
     return lost ;
 }
 
@@ -1033,7 +1023,7 @@ searchState highPoisonCreate( void ) {
     
 
     // Now loop through days
-    for ( int Day=1 ; Day < maxday ; ++Day ) {
+    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
         printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(gameListNext,gameListStart),iPremadeMoves);
         switch ( highPoisonDay(Day,Game_none) ) {
             case won:
@@ -1046,7 +1036,7 @@ searchState highPoisonCreate( void ) {
                 break ;
         }
     }
-    printf( "Exceeded %d days.\n",maxday ) ;
+    printf( "Exceeded %d days.\n",MaxDays ) ;
     return lost ;
 }
 

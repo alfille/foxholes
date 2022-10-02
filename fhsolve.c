@@ -53,7 +53,6 @@ int visits = 1;
 Bool_t update = 0 ;
 Connection_t connection = Rectangular ;
 Geometry_t geo = Circle ;
-int maxday = 1000000 ;
 int searchCount = 0 ;
 Bool_t json = False ;
 Bool_t jsonfile = False ;
@@ -61,7 +60,7 @@ FILE * jfile ;
 
 // Limits
 #define MAXHOLES 64
-#define MAXPOISON 4
+#define MAXPOISON 20
 #define MaxDays 1000
 
 // Bit macros

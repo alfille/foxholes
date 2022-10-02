@@ -55,7 +55,6 @@ int visits = 1;
 Bool_t update = 0 ;
 Connection_t connection = Rectangular ;
 Geometry_t geo = Circle ;
-int maxday = 1000000 ;
 int searchCount = 0 ;
 Bool_t json = False ;
 Bool_t jsonfile = False ;
@@ -156,6 +155,7 @@ Searchstate_t lowPoisonCreate( void ) ;
 Searchstate_t lowPoisonDay( int Day, Bits_t target ) ;
 
 Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
+int compare(const void* numA, const void* numB) ;
 void gamesSeenAdd( Bits_t g ) ;
 Bool_t gamesSeenFound( Bits_t g ) ;
 
@@ -178,7 +178,7 @@ int main( int argc, char **argv )
     // Parse Arguments
     int c ;
     opterr = 0 ; // suppress option error display (to allow optional arguments)
-    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:j:J:" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help() ;
@@ -240,14 +240,6 @@ int main( int argc, char **argv )
         case 'u':
         case 'U':
             update = True ;
-            break ;
-        case 'm':
-        case 'M':
-            maxday = atoi(optarg);
-            if ( maxday < 1 ) {
-                fprintf( stderr, "Maximum number of days allowed is too small\n" );
-                exit(1);
-            }
             break ;
         case 'j':
         case 'J':
@@ -367,7 +359,6 @@ void help( void ) {
     printf("\n") ;
     printf("\t-v 1\tholes Visited per day\n") ;
     printf("\t-p 0\tdays visited holes are Poisoned") ;
-    printf("\t-m 10\tmaximum number of days allowed") ;
     printf("\n") ;
     printf("\t-u\tperiodic Updates\n") ;
     printf("\t-h\thelp\n") ;
@@ -423,8 +414,7 @@ void gamesSeenCreate() {
     //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
 }
 
-int compare(const void* numA, const void* numB)
-{
+int compare(const void* numA, const void* numB) {
     const Bits_t num1 = *(const Bits_t*)numA;
     const Bits_t num2 = *(const Bits_t*)numB;
 
@@ -987,7 +977,7 @@ Searchstate_t lowPoisonCreate( void ) {
     ++gameListNext ;
     
     // Now loop through days
-    for ( int Day=1 ; Day < maxday ; ++Day ) {
+    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
         printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
         switch ( lowPoisonDay(Day,Game_none) ) {
             case won:
@@ -1004,7 +994,7 @@ Searchstate_t lowPoisonCreate( void ) {
             backTraceAdd(Day) ;
         }
     }
-    printf( "Exceeded %d days.\n",maxday ) ;
+    printf( "Exceeded %d days.\n",MaxDays ) ;
     return lost ;
 }
 
@@ -1015,7 +1005,7 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
 
     int iold = gameListStart ; // need to define before loop
     gameListStart = gameListNext ;
-        
+
     for (  ; iold!=gameListStart ; iold=INC(iold) ) { // each possible position
         for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
             Bits_t newT ;
@@ -1081,7 +1071,7 @@ Searchstate_t highPoisonCreate( void ) {
     
 
     // Now loop through days
-    for ( int Day=1 ; Day < maxday ; ++Day ) {
+    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
         printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
         switch ( highPoisonDay(Day,Game_none) ) {
             case won:
@@ -1094,7 +1084,7 @@ Searchstate_t highPoisonCreate( void ) {
                 break ;
         }
     }
-    printf( "Exceeded %d days.\n",maxday ) ;
+    printf( "Exceeded %d days.\n",MaxDays ) ;
     return lost ;
 }
 
