@@ -36,6 +36,12 @@ struct {
     .free = STORESIZE ,
 } ;
 
+typedef enum {
+    Val_ok,
+    Val_fix,
+    Val_fail,
+} Validation_t ;
+
 Bits_t Game_none = 0; // no foxes
 Bits_t Game_all ;
 
@@ -59,9 +65,9 @@ Bool_t jsonfile = False ;
 FILE * jfile ;
 
 // Limits
-#define MAXHOLES 64
-#define MAXPOISON 20
+#define MaxHoles 64
 #define MaxDays 1000
+#define MaxPoison MaxDays
 
 // Bit macros
 // 64 bit for games, moves, jumps
@@ -84,8 +90,8 @@ FILE * jfile ;
 int victoryDay = -1 ;
 
 Bits_t Game[MaxDays+1];
-Bits_t MovePlus[MaxDays+MaxDays+1];
-Bits_t * Move = MovePlus + MaxDays ; // allows prior space for poisons
+Bits_t MovePlus[MaxPoison+MaxDays+1];
+Bits_t * Move = MovePlus + MaxPoison ; // allows prior space for poisons
 
 // For recursion
 typedef enum {
@@ -103,6 +109,7 @@ void help( void ) ;
 char * geoName( Geometry_t g ) ;
 char * connName( Connection_t c ) ;
 void printStatus() ;
+Validation_t validate( void ) ;
 
 void gamesSeenCreate() ;
 void jumpHolesCreate() ;
@@ -138,34 +145,20 @@ int main( int argc, char **argv )
         case 'L':
             // xlength
             xlength = atoi(optarg);
-            if ( xlength < 3 ) {
-                fprintf(stderr,"Bad length will set to 5\n");
-                xlength = 5;
-            }
             break ;
         case 'w':
         case 'W':
             // ylength (width)
             ylength = atoi(optarg);
-            if ( xlength < 1 ) {
-                fprintf(stderr,"Bad width will set to 1\n");
-                ylength = 1;
-            }
             break ;
         case 'p':
         case 'P':
         // poison days
             poison = atoi(optarg);
-            if (poison<0) {
-                poison = 0;
-            }
             break ;
         case 'v':
         case 'V':
             visits = atoi(optarg);
-            if (visits<1) {
-                visits=1 ;
-            }
             break ;
         case '4':
             connection = Rectangular ;
@@ -220,34 +213,17 @@ int main( int argc, char **argv )
         }
     }
 
-    // total holes
-    switch( geo ) {
-        case Circle:
-        case Grid:
-            holes = xlength * ylength ;
+    switch ( validate() ) {
+        case Val_ok:
             break ;
-        case Triangle:
-            ylength = xlength ;
-            holes = xlength * ( xlength+1) / 2 ;
+        case Val_fix:
+            fprintf(stderr,"Continue with corrected values\n");
             break ;
+        case Val_fail:
+            fprintf(stderr,"Invalid parameters\n");
+            exit(1) ;
     }
-    if ( holes > MAXHOLES ) {
-        fprintf(stderr,"Length %d X Width %d = Total %d\n\tGreater than max %d\n",xlength,ylength,holes,MAXHOLES);
-        exit(1);
-    }
-
-    // visits
-    if ( visits > holes ) {
-        fprintf(stderr, "Changing visits to be no larger than the number of holes (%d)\n",holes);
-        visits = holes ;
-    }
-
-    // poison
-    if ( poison > MAXPOISON ) {
-        fprintf(stderr, "Changing poison days to be no larger than the maximum programmed for (%d)\n",MAXPOISON);
-        poison = MAXPOISON ;
-    }
-
+    
     // Print final arguments
     printStatus();    
     
@@ -302,6 +278,84 @@ int main( int argc, char **argv )
             fclose( jfile ) ;
         }
     }
+}
+
+Validation_t validate( void ) {
+    Validation_t v = Val_ok ; // default
+
+    // length
+    if ( xlength < 3 ) {
+        fprintf(stderr,"Bad length will set to 5\n");
+        xlength = 5;
+        v = Val_fix ;
+    }
+    if ( xlength > MaxHoles ) {
+        fprintf(stderr,"Bad length will set to %d\n",MaxHoles);
+        xlength = MaxHoles;
+        v = Val_fix ;
+    }
+
+    // width
+    if ( ylength < 1 ) {
+        fprintf(stderr,"Bad width will set to 1\n");
+        ylength = 1;
+        v = Val_fix ;
+    }
+    if ( ylength < 1 ) {
+        fprintf(stderr,"Bad width will set to 1\n");
+        ylength = 1;
+        v = Val_fix ;
+    }
+    if ( ylength > MaxHoles/3 ) {
+        fprintf(stderr,"Bad width will set to %d\n",MaxHoles/3);
+        ylength = MaxHoles/3 ;
+        v = Val_fix ;
+    }
+
+    // poison
+    if (poison<0) {
+        fprintf(stderr,"Bad poisoning will set to 0 days\n");
+        poison = 0;
+        v = Val_fix ;
+    }
+    if (poison>MaxPoison) {
+        fprintf(stderr,"Bad poisoning will set to %d days\n",MaxPoison);
+        poison = MaxPoison;
+        v = Val_fix ;
+    }
+
+    // visits (lower)
+    if (visits<1) {
+        fprintf(stderr,"Holes visited/day will be set to 1\n");
+        visits=1 ;
+        v = Val_fix ;
+    }
+
+    // Calculate holes
+    // total holes
+    switch( geo ) {
+        case Circle:
+        case Grid:
+            holes = xlength * ylength ;
+            break ;
+        case Triangle:
+            ylength = xlength ;
+            holes = xlength * ( xlength+1) / 2 ;
+            break ;
+    }
+    if ( holes > MaxHoles ) {
+        fprintf(stderr,"%d Holes calculated for %s -- greater than max %d\n",holes,geoName(geo),MaxHoles);
+        return Val_fail ;
+    }
+
+    // visits
+    if ( visits > holes ) {
+        fprintf(stderr, "Changing visits to be no larger than the number of holes (%d)\n",holes);
+        visits = holes ;
+        v = Val_fix ;
+    }
+
+    return v;
 }
 
 void help( void ) {
@@ -753,9 +807,11 @@ Searchstate_t calcMove( int day ) {
 
 Searchstate_t firstDay( void ) {
     // set up Games and Moves
-    for( int i=0 ; i<=MaxDays ; ++i ) {
+    for( int i=0 ; i<=MaxDays ; ++i ) { // forward
         Game[i] = Game_all ;
         Move[i] = Game_none ;
+    }
+    for( int i=0 ; i<=MaxPoison ; ++i ) { // backward
         MovePlus[i] = Game_none ;
     }
     gamesSeenAdd( Game_all ) ;
