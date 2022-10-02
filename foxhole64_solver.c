@@ -24,7 +24,6 @@ typedef uint64_t Bits_t;
 Bits_t Store[STORESIZE] ;
 #define UNSORTSIZE 50
 
-
 struct {
     Bits_t * Jumps ;
     Bits_t * Possible ;
@@ -45,6 +44,7 @@ Bits_t Game_all ;
 typedef enum { False, True } Bool_t ;
 
 typedef enum { Circle, Grid, Triangle } Geometry_t ;
+typedef enum { Rectangular, Hexagonal, Octagonal } Connection_t ;
 
 // Globals from command line
 int xlength = 5;
@@ -53,7 +53,7 @@ int holes;
 int poison = 0;
 int visits = 1;
 Bool_t update = 0 ;
-Bool_t offset = False ;
+Connection_t connection = Rectangular ;
 Geometry_t geo = Circle ;
 int maxday = 1000000 ;
 int searchCount = 0 ;
@@ -138,6 +138,7 @@ typedef enum {
 int main( int argc, char **argv ) ;
 void help( void ) ;
 char * geoName( Geometry_t g ) ;
+char * connName( Connection_t c ) ;
 void printStatus() ;
 
 void gamesSeenCreate() ;
@@ -177,7 +178,7 @@ int main( int argc, char **argv )
     // Parse Arguments
     int c ;
     opterr = 0 ; // suppress option error display (to allow optional arguments)
-    while ( (c = getopt( argc, argv, "oOcCtTgGuUhHl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:m:M:j:J:" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help() ;
@@ -215,9 +216,14 @@ int main( int argc, char **argv )
                 visits=1 ;
             }
             break ;
-        case 'o':
-        case 'O':
-            offset = True ;
+        case '4':
+            connection = Rectangular ;
+            break ;
+        case '6':
+            connection = Hexagonal ;
+            break ;
+        case '8':
+            connection = Octagonal ;
             break ;
         case 'c':
         case 'C':
@@ -307,6 +313,7 @@ int main( int argc, char **argv )
     for ( int h=0 ; h<holes ; ++h ) {
         setB( Game_all, h ) ;
     }
+    Victory.day = -1;
 
     if ( update ) {
         printf("Setting up moves\n");
@@ -352,7 +359,11 @@ void help( void ) {
     printf("\n") ;
     printf("\t-c\tfoxholes in a Circle\n") ;
     printf("\t-g\tfoxholes in a Grid\n") ;
-    printf("\t-o\tfoxholes Offset\n") ;
+    printf("\t-t\tfoxholes in a Triangle\n") ;
+    printf("\n") ;
+    printf("\t-4\tfoxholes connected Rectangularly\n") ;
+    printf("\t-6\tfoxholes connected Hexagonally\n") ;
+    printf("\t-8\tfoxholes connected Octagonally\n") ;
     printf("\n") ;
     printf("\t-v 1\tholes Visited per day\n") ;
     printf("\t-p 0\tdays visited holes are Poisoned") ;
@@ -376,19 +387,31 @@ char * geoName( Geometry_t g ) {
         }
 }
 
+char * connName( Connection_t c ) {
+    switch (c) {
+        case Rectangular:
+            return "rectangular";
+        case Hexagonal:
+            return "hexagonal";
+        case Octagonal:
+            return "octagonal";
+        default:
+            return "unknown_connection";
+        }
+}
+
 void printStatus() {
     printf("Foxhole32 solver -- {c} 2022 Paul H Alfille\n");
     printf("\n");
     printf("Length %d X Width %d\n",xlength, ylength);
     printf("\t total %d holes \n",holes);
     printf("Geometry_t: %s\n",geoName(geo));
-    printf(offset?"\toffset holes\n":"\tno offset\n");
+    printf("Connection: %s\n",connName(connection));
     printf("\n");
     printf("%d holes visited per day\n",visits);
     printf("\tHoles poisoned for %d days\n",poison);
     printf("\n");
 }
-
 
 void gamesSeenCreate() {
     // Loc.Sorted already set in premadeMovesCreate
@@ -449,17 +472,23 @@ void jumpHolesCreate() {
 
     /* Explanation of moves:
      *
-     * Non-offset:
+     * Rectangular:
      *         Above
      *   Left    O    Right
      *         Below
      *
-     * Offset:
+     * Hexagonal:
      *     AboveL  AboveR
      *   Left    O    Right
      *     BelowL  BelowR
      *
+     * Octagonal:
+     *   AboveL  Above  AboveR
+     *   Left    O      Right
+     *   BelowL  Below  BelowR
+     *
      * */
+
     Bits_t * J = Loc.Jumps ; // bitmap to be constructed
 
     // loop though for all current locations
@@ -469,26 +498,43 @@ void jumpHolesCreate() {
                 for ( int x=0 ; x<xlength ; ++x ) { // horizontal
                     *J = 0 ; // clear it first
                     // circle geometry -- right/left wraps around
-                    if ( offset ) { // offset circle
-                        setB( *J, W(x-1,y) ); // Left
-                        setB( *J, W(x+1,y) ) ; // Right
-                        if ( y > 0 ) {
-                            setB( *J, W(x+(y&1)-1,y-1) ); // AboveL
-                            setB( *J, W(x+(y&1)  ,y-1) ) ; // AboveR
-                        }
-                        if ( y < ylength-1 ) { // below
-                            setB( *J, W(x+(y&1)-1,y+1) ); // BelowL
-                            setB( *J, W(x+(y&1)  ,y+1) ) ; // BelowR
-                        }
-                    } else { // normal circle (wrap x, not y)
-                        setB( *J, W(x-1,y) ); // Left
-                        setB( *J, W(x+1,y) ) ; // Right
-                        if ( y > 0 ) {
-                            setB( *J, I(x,y-1) ); // Above
-                        }
-                        if ( y < ylength-1 ) {
-                            setB( *J, I(x,y+1) ); // Below
-                        }
+                    switch ( connection ) {
+                        case Hexagonal:
+                            setB( *J, W(x-1,y) ); // Left
+                            setB( *J, W(x+1,y) ) ; // Right
+                            if ( y > 0 ) { // not top
+                                setB( *J, W(x+(y&1)-1,y-1) ); // AboveL
+                                setB( *J, W(x+(y&1)  ,y-1) ) ; // AboveR
+                            }
+                            if ( y < ylength-1 ) { // not bottom
+                                setB( *J, W(x+(y&1)-1,y+1) ); // BelowL
+                                setB( *J, W(x+(y&1)  ,y+1) ) ; // BelowR
+                            }
+                            break ;
+                        case Rectangular:   
+                            setB( *J, W(x-1,y) ); // Left
+                            setB( *J, W(x+1,y) ) ; // Right
+                            if ( y > 0 ) { // not top
+                                setB( *J, W(x,y-1) ); // Above
+                            }
+                            if ( y < ylength-1 ) { // not bottom
+                                setB( *J, W(x,y+1) ); // Below
+                            }
+                            break ;
+                        case Octagonal:   
+                            setB( *J, W(x-1,y) ); // Left
+                            setB( *J, W(x+1,y) ) ; // Right
+                            if ( y > 0 ) { // not top
+                                setB( *J, W(x-1,y-1) ); // AboveL
+                                setB( *J, W(x,y-1) ); // Above
+                                setB( *J, W(x+1,y-1) ); // AboveR
+                            }
+                            if ( y < ylength-1 ) { // not bottom
+                                setB( *J, W(x-1,y+1) ); // BelowL
+                                setB( *J, W(x,y+1) ); // Below
+                                setB( *J, W(x+1,y+1) ); // BelowR
+                            }
+                            break ;
                     }
                     ++J;
                 }
@@ -499,53 +545,85 @@ void jumpHolesCreate() {
             for ( int y=0 ; y<ylength ; ++y ) { // vertical
                 for ( int x=0 ; x<xlength ; ++x ) { // horizontal
                     *J = 0 ; // clear it first
-                    if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
-                        if ( x > 0 ) {
-                            setB( *J, I(x-1,y) ); // Left
-                        }
-                        if ( x < xlength-1 ) {
-                            setB( *J, I(x+1,y) ) ; // Right
-                        }
-                        if ( y > 0 ) { // above
-                            if ( y&1 ) { // odd row
-                                setB( *J, I(x,y-1) ); // AboveL 
-                                if ( x < xlength-1 ) {
-                                    setB( *J, I(x+1,y-1) ); // AboveR
-                                }
-                            } else { // even row
-                                if ( x >0 ) {
-                                    setB( *J, I(x-1,y-1) ); // AboveL
-                                }
-                                setB( *J, I(x,y-1) ); // AboveR
+                    switch ( connection ) {
+                        case Hexagonal:
+                            // left and right the same, up and down have 2 targets each depending on even/odd
+                            if ( x > 0 ) { // not left edge
+                                setB( *J, I(x-1,y) ); // Left
                             }
-                        }
-                        if ( y < ylength-1 ) { // below
-                            if ( y&1 ) { // odd row
-                                setB( *J, I(x,y+1) ); // AboveL
-                                if ( x < xlength-1 ) {
-                                    setB( *J, I(x+1,y+1) ); // AboveR
-                                }
-                            } else { // even row
-                                if ( x >0 ) {
-                                    setB( *J, I(x-1,y+1) ); // AboveL
-                                }
-                                setB( *J, I(x,y+1) ); // AboveR
+                            if ( x < xlength-1 ) { // not right edge
+                                setB( *J, I(x+1,y) ) ; // Right
                             }
+                            if ( y > 0 ) { // not top
+                                if ( y&1 ) { // odd row
+                                    setB( *J, I(x,y-1) ); // AboveL 
+                                    if ( x < xlength-1 ) {
+                                        setB( *J, I(x+1,y-1) ); // AboveR
+                                    }
+                                } else { // even row
+                                    if ( x >0 ) {
+                                        setB( *J, I(x-1,y-1) ); // AboveL
+                                    }
+                                    setB( *J, I(x,y-1) ); // AboveR
+                                }
+                            }
+                            if ( y < ylength-1 ) { // not bottom
+                                if ( y&1 ) { // odd row
+                                    setB( *J, I(x,y+1) ); // AboveL
+                                    if ( x < xlength-1 ) {
+                                        setB( *J, I(x+1,y+1) ); // AboveR
+                                    }
+                                } else { // even row
+                                    if ( x >0 ) {
+                                        setB( *J, I(x-1,y+1) ); // AboveL
+                                    }
+                                    setB( *J, I(x,y+1) ); // AboveR
+                                }
+                            }
+                            break ;
+                        case Rectangular:
+                            // normal grid (left, right, up, down) not past edges
+                            if ( x > 0 ) {
+                                setB( *J, I(x-1,y) );
+                            }
+                            if ( x < xlength-1 ) {
+                                setB( *J, I(x+1,y) ) ;
+                            }
+                            if ( y > 0 ) {
+                                setB( *J, I(x,y-1) );
+                            }
+                            if ( y < ylength-1 ) {
+                                setB( *J, I(x,y+1) );
+                            }
+                            break ;
+                        case Octagonal:
+                            // not past edges
+                            if ( x > 0 ) {
+                                if ( y > 0 ) {
+                                    setB( *J, I(x-1,y-1) );
+                                }
+                                setB( *J, I(x-1,y) );
+                                if ( y < ylength-1 ) {
+                                    setB( *J, I(x-1,y+1) );
+                                }
+                            }
+                            if ( y > 0 ) {
+                                setB( *J, I(x,y-1) );
+                            }
+                            if ( y < ylength-1 ) {
+                                setB( *J, I(x,y+1) );
+                            }
+                            if ( x < xlength-1 ) {
+                                if ( y > 0 ) {
+                                    setB( *J, I(x+1,y-1) );
+                                }
+                                setB( *J, I(x+1,y) );
+                                if ( y < ylength-1 ) {
+                                    setB( *J, I(x+1,y+1) );
+                                }
+                            }
+                            break ;
                         }
-                    } else { // normal grid (left, right, up, down) not past edges
-                        if ( x > 0 ) {
-                            setB( *J, I(x-1,y) );
-                        }
-                        if ( x < xlength-1 ) {
-                            setB( *J, I(x+1,y) ) ;
-                        }
-                        if ( y > 0 ) {
-                            setB( *J, I(x,y-1) );
-                        }
-                        if ( y < ylength-1 ) {
-                            setB( *J, I(x,y+1) );
-                        }
-                    }
                     J++;
                 }
             }
@@ -555,36 +633,65 @@ void jumpHolesCreate() {
             for ( int y=0 ; y<xlength ; ++y ) { // vertical
                 for ( int x=0 ; x<=y ; ++x ) { // horizontal
                     *J = 0 ; // clear it first
-                    if ( offset ) { // offset, left and right the same, up and down have 2 targets each depending on even/odd
-                        if ( x > 0 ) {
-                            setB( *J, T(x-1,y) ); // Left
-                        }
-                        if ( x < y ) {
-                            setB( *J, T(x+1,y) ) ; // Right
-                        }
-                        if ( y > 0 ) { // above
-                            if ( x>0 ) { 
-                                setB( *J, T(x-1,y-1) ); // AboveL
-                            } 
-                            if ( x < y ) {
-                                    setB( *J, T(x,y-1) ); // AboveR
+                    switch ( connection ) {
+                        case Hexagonal:
+                            // offset, left and right the same, up and down have 2 targets each depending on even/odd
+                            if ( x > 0 ) {
+                                setB( *J, T(x-1,y) ); // Left
                             }
-                        }
-                        if ( y < xlength-1 ) { // below
-                            setB( *J, T(x,y+1) ); // BelowL
-                            setB( *J, T(x+1,y+1) ); // BelowR
-                        }
-                    } else { // normal triangle (left, right, up, down) not past edges
-                        if ( x > 0 ) {
-                            setB( *J, T(x-1,y) );
-                        }
-                        if ( x < y ) {
-                            setB( *J, T(x+1,y) ) ;
-                            setB( *J, T(x,y-1) );
-                        }
-                        if ( y < ylength-1 ) {
-                            setB( *J, T(x,y+1) );
-                        }
+                            if ( x < y ) {
+                                setB( *J, T(x+1,y) ) ; // Right
+                            }
+                            if ( y > 0 ) { // above
+                                if ( x>0 ) { 
+                                    setB( *J, T(x-1,y-1) ); // AboveL
+                                } 
+                                if ( x < y ) {
+                                        setB( *J, T(x,y-1) ); // AboveR
+                                }
+                            }
+                            if ( y < xlength-1 ) { // below
+                                setB( *J, T(x,y+1) ); // BelowL
+                                setB( *J, T(x+1,y+1) ); // BelowR
+                            }
+                            break ;
+                        case Rectangular:
+                            // normal triangle (left, right, up, down) not past edges
+                            if ( x > 0 ) {
+                                setB( *J, T(x-1,y) );
+                            }
+                            if ( x < y ) {
+                                setB( *J, T(x+1,y) ) ;
+                                setB( *J, T(x,y-1) );
+                            }
+                            if ( y < ylength-1 ) {
+                                setB( *J, T(x,y+1) );
+                            }
+                            break ;
+                        case Octagonal:
+                            // normal triangle (left, right, up, down) not past edges
+                            if ( x > 0 ) {
+                                setB( *J, T(x-1,y) );
+                                if ( y > 0 ) {
+                                    setB( *J, T(x-1,y-1) );
+                                }
+                                if ( y < ylength-1 ) {
+                                    setB( *J, T(x-1,y+1) );
+                                }
+                                    
+                            }
+                            if ( x < y ) {
+                                setB( *J, T(x+1,y) ) ;
+                                setB( *J, T(x,y-1) );
+                                if ( x < y-1 ) {
+                                    setB( *J, T(x+1,y-1) );
+                                }
+                            }
+                            if ( y < ylength-1 ) {
+                                setB( *J, T(x,y+1) );
+                                setB( *J, T(x+1,y+1) );
+                            }
+                            break ;
                     }
                     ++J ;
                 }
@@ -592,12 +699,6 @@ void jumpHolesCreate() {
             break ;
     }
     Loc.Possible = J ;
-    /*
-    for ( size_t p=0 ; p<holes; ++p ) {
-        printf("\n");
-        showBits( Loc.Jumps[p] ) ;
-    }
-    * */
 }
         
 void showBits( Bits_t bb ) {
@@ -1086,10 +1187,10 @@ void jsonOut( void ) {
         fprintf(jfile, QQ(length)":%d,\n", xlength);
         fprintf(jfile, QQ(width)":%d,\n",  ylength);
         fprintf(jfile, QQ(visits)":%d,\n", visits );
-        fprintf(jfile, QQ(offset)":%s,\n", offset?"true":"false" );
+        fprintf(jfile, QQ(connection)":"QQ(%s)",\n", connName(connection) );
         fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", geoName(geo) );
         if ( Victory.day >= 0 ) {
-            fprintf(jfile, QQ(days)":%d,/n", Victory.day );
+            fprintf(jfile, QQ(days)":%d,\n", Victory.day );
             if ( poison < 2 ) { // low poison, backtrace possible
                 fprintf(jfile, QQ(moves)":[" ) ;
                     for ( int d=1; d<=Victory.day ; ++d ) {
