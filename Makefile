@@ -1,5 +1,5 @@
 CC = gcc
-NAMES = foxhole_solver foxhole64_solver fhsolve
+NAMES = foxhole32_solver foxhole64_solver fhsolve
 BINDIR = /usr/bin
 
 CFLAGS = -W -Wall -Wextra -pedantic -O3
