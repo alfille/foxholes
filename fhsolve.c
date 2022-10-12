@@ -301,11 +301,6 @@ Validation_t validate( void ) {
         ylength = 1;
         v = Val_fix ;
     }
-    if ( ylength < 1 ) {
-        fprintf(stderr,"Bad width will set to 1\n");
-        ylength = 1;
-        v = Val_fix ;
-    }
     if ( ylength > MaxHoles/3 ) {
         fprintf(stderr,"Bad width will set to %d\n",MaxHoles/3);
         ylength = MaxHoles/3 ;
