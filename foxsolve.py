@@ -1,23 +1,31 @@
 import sys
-import tkinter as tk
+import tkinter
 from tkinter import simpledialog
 from tkinter import filedialog
+from tkinter import scrolledtext
 from tkinter import ttk
 import signal
+import subprocess
+import queue
+import threading
 import math
 import json
+import time
 
 def signal_handler(signal, frame):
     print("\nForced end\n")
     sys.exit(0)
 
 class Param:
+    # default parameters
     length = 5
     width = 1
     visits = 1
     poison = 0
     geometry = "grid"
     connection = "rectangular"
+
+    # empty stack
     stack=[]
 
     def __new__(cls):
@@ -27,14 +35,18 @@ class Param:
     def valid(cls):
         # push already called
         if cls._valid():
+            # parameters ok, use and remove pushed ones
             cls.shampop()
             return True
         else:
-            cls.pop()
+            # parameters not ok, pull back pushed ones
+            cls.pop() # known good
+            cls._valid() # just to reset calculated properties
             return False
         
     @classmethod
     def _valid(cls):
+        # test parameters and calculates some derived properties
         if cls.length < 3 or cls.length > 64:
             return False
             
@@ -60,15 +72,25 @@ class Param:
         if cls.visits < 1 or cls.visits > cls.total:
             return False
 
+        if cls.poison > 1:
+            cls.program = "fhsolve"
+        elif cls.total < 33:
+            cls.program = "foxhole32_solver"
+        else:
+            cls.program = "foxhole64_solver"
+        print("Holes {} program {}".format(cls.total,cls.program))
+
         return cls.connection in ["rectangular","hexgonal","octagonal"]
 
     @classmethod
     def push(cls):
+        # pushes parameters in a stack to test new ones
         cls.stack.extend( [cls.length,cls.width,cls.visits,cls.poison,cls.geometry,cls.connection] )
         
     @classmethod
     def pop(cls):
-        if cls.statck.length() > 5:
+        # pulls and uses pushed parameters (overwrites test ones)
+        if cls.stack.length() > 5:
             cls.connection = cls.stack.pop()
             cls.geometry   = cls.stack.pop()
             cls.poison     = cls.stack.pop()
@@ -85,6 +107,7 @@ class Param:
 
     @classmethod
     def shampop(cls):
+        # pulls and discards pushed parameters (keeps test ones)
         if len(cls.stack) > 5:
             cls.stack.pop()
             cls.stack.pop()
@@ -95,13 +118,14 @@ class Param:
 
     @classmethod
     def filename(cls):
+        # Creates a JSON filename frrom settings
         return "FHl{}w{}v{}p{}{}{}.json".format(Param.length,Param.width,Param.visits,Param.poison,Param.geometry[0],4+2*(["rectangular","hexagonal","octagonal"].index(Param.connection)))
 
     @classmethod
     def commandLine(cls):
-        # 0th element is a placeholder
+        # returns a list for Popen (command and arguments)
         arg = [
-        "fhsolve",
+        Param.program,
         "-l{}".format(Param.length),
         "-w{}".format(Param.width),
         "-v{}".format(Param.visits),
@@ -113,13 +137,22 @@ class Param:
         ]
         return arg
 
-class Foxhole(tk.Frame):
+class Foxhole(tkinter.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
 
+
+        # make queues for keeping stdout and stderr whilst it is transferred between threads
+        self.looper = False
+        self.process = None
+        self.out_thread = False
+        self.outQueue = queue.Queue()
+        self.t_run = None
+
         self.create_menu()
         self.create_widgets()
+
         Param.valid()
         self.postValid()
 
@@ -209,48 +242,100 @@ class Foxhole(tk.Frame):
             self.status.config(text="No file")
 
     def create_widgets(self):
+        # overall notebook
         self.win = ttk.Notebook(self.master,width=600,height=500,padding=10)
         self.master.title("Foxhole Solver")
-        self.win.pack(side="top")
-        
-        settings = tk.Frame(self.win)
+        self.win.pack(side="top",expand=True,fill=tkinter.BOTH)
+
+        # first tab -- show parameters
+        settings = tkinter.Frame(self.win)
         self.win.add(settings,text="Settings")
         
-        setset = tk.LabelFrame( settings,text="Set",bd=4)
-        setset.pack(side=tk.LEFT,padx=7)
+        setset = tkinter.LabelFrame( settings,text="Set",bd=4)
+        setset.pack(side=tkinter.LEFT,padx=7)
         setsetF = [ttk.LabelFrame(setset,text=x) for x in ["Length","Width","Visits per day","Poisoned days","Geometry","Jump connections"]]
         for x in setsetF:
-            x.grid(sticky=tk.E+tk.W,padx=7)
-        self.setL = [ ttk.Label(x,anchor=tk.E,pad=4) for x in setsetF ]
+            x.grid(sticky=tkinter.E+tkinter.W,padx=7)
+        self.setL = [ ttk.Label(x,anchor=tkinter.E,pad=4) for x in setsetF ]
         for x in self.setL:
-            x.pack(fill=tk.X)
+            x.pack(fill=tkinter.X)
         
-        setcalc = tk.LabelFrame( settings,text="Calculated",bd=4)
-        setcalc.pack(side=tk.RIGHT,padx=7)
-        setcalcF = [ttk.LabelFrame(setcalc,text=x) for x in ["Total holes","Game states","Visit patterns","Solver chosen"]]
+        setcalc = tkinter.LabelFrame( settings,text="Calculated",bd=4)
+        setcalc.pack(side=tkinter.LEFT,padx=7)
+        setcalcF = [ttk.LabelFrame(setcalc,text=x) for x in ["Total holes","Game states","Visit patterns","Solver chosen","Default filename"]]
         for x in setcalcF:
-            x.grid(sticky=tk.E+tk.W,padx=7)
-        self.calcL = [ ttk.Label(x,anchor=tk.E,pad=4) for x in setcalcF ]
+            x.grid(sticky=tkinter.E+tkinter.W,padx=7)
+        self.calcL = [ ttk.Label(x,anchor=tkinter.E,pad=4) for x in setcalcF ]
         for x in self.calcL:
-            x.pack(fill=tk.X)
+            x.pack(fill=tkinter.X)
+
+        # second tab -- stdout
+        output = tkinter.Frame(self.win)
+        self.win.add(output,text="Output")
+        self.stdout=scrolledtext.ScrolledText(output,state=tkinter.DISABLED)
+        self.stdout.pack(expand=True,fill=tkinter.BOTH)
+
+        # third tab
+        JSON = tkinter.Frame(self.win)
+        self.win.add(JSON,text="JSON")
+        self.JSON=tkinter.scrolledtext.ScrolledText(JSON,state=tkinter.DISABLED)
+        self.JSON.pack(expand=True,fill=tkinter.BOTH)
         
-        self.progress = tk.Frame(self.win)
-        self.win.add(self.progress,text="Progress")
-        
-        self.JSON = tk.Frame(self.win)
-        self.win.add(self.JSON,text="JSON")
-        
-        self.buttons=tk.Frame(self.master,borderwidth=2,relief="flat",background="white")
-        tk.Button(self.buttons,text="Exit",command=self.Quit).pack(side="left")
-        self.status = tk.Label(self.buttons,text="Edit mode",relief="sunken",anchor="e")
+        # bottom panel -- exit and status
+        self.buttons=tkinter.Frame(self.master,borderwidth=2,relief="flat",background="white")
+        tkinter.Button(self.buttons,text="Exit",command=self.Quit).pack(side="left")
+        self.status = tkinter.Label(self.buttons,text="Edit mode",relief="sunken",anchor="e")
         self.status.pack(side="left",fill="both",expand=1)
-        self.buttons.pack(side="bottom",fill=tk.X)
-    
-                                
+        self.buttons.pack(side="bottom",fill=tkinter.X)
             
     def about(self):
         print("Foxhole Solve by Paul Alfille 2022")
 
+    def Loop(self):
+        # loops while solver runs
+        self.stdout.config(state=tkinter.NORMAL)
+        while not self.outQueue.empty():
+            self.stdout.insert(tkinter.END, self.outQueue.get_nowait())
+            self.stdout.see(tkinter.END)
+        self.stdout.config(state=tkinter.DISABLED)
+
+        self.loop += 1
+        if self.process:
+            # Loop again
+            #print("Loop again")
+            self.status.config(text="Loop {} threads {}".format(self.loop,threading.active_count()))
+            self.master.after( 500, func=self.Loop )
+        else:
+            self.master.after( 2000, func=self.Loop )
+
+    def Stop(self):
+        while self.process:
+            try:
+                self.process.kill()
+                #print("Stopping")
+            except:
+                break
+        
+    def Run(self):
+        # start solve process
+        try:
+            self.process = subprocess.Popen(
+                Param.commandLine(),
+    #            ["ping", "localhost", "-c6"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text= True,
+                )
+        except Exception as e:
+            print(e)
+
+        while True:
+            output = self.process.stdout.readline()
+            if output == '' and self.process.poll() is not None:
+                break
+            if output:
+                self.outQueue.put(output)
+        self.process = None
 
     def postValid(self):
         # update settings display
@@ -265,21 +350,49 @@ class Foxhole(tk.Frame):
         self.calcL[0].config(text=str(Param.total))
         self.calcL[1].config(text=str( 2 ** Param.total ))
         self.calcL[2].config(text=str( math.comb(Param.total,Param.visits) ))
-        if Param.poison > 1:
-            self.calcL[3].config(text="Non-backtrace")
-        elif Param.total <33:
-            self.calcL[3].config(text="32-bit full gamestate")
-        else:
-            self.calcL[3].config(text="64-bit sorted gamestate")
-
+        self.calcL[3].config(text=Param.program)
+        self.calcL[4].config(text=Param.filename())
+ 
+        self.loop = 0
         self.status.config(text="New settings accepted")
-        print(Param.commandLine())
+        #print(Param.commandLine())
+        self.Solve()
 
+    def Solve(self):
+        # Clear text fields
+        self.stdout.config(state=tkinter.NORMAL)
+        self.stdout.delete('1.0',tkinter.END)
+        self.stdout.config(state=tkinter.DISABLED)
+
+        # Stop existing solver and thread
+        if self.process: # stop solver
+            self.Stop()
+        if self.t_run: # reap thread
+            self.t_run.join(1.0)
+            if not self.t_run.is_alive():
+                self.t_run = None
+
+        # Start solve thread
+        self.t_run = self.startThread( self.Run )
+
+        # Main thread (tkinter) loop for display
+        if not self.looper:
+            self.looper = True
+            self.Loop()
+
+    def startThread(self,target=None):
+        if target:
+            t = threading.Thread(target=target)
+            t.daemon = True
+            t.start()
+            return t
+        else:
+            return None
 
     def create_menu(self):
-        menu = tk.Menu(self.master,tearoff=0)
+        menu = tkinter.Menu(self.master,tearoff=0)
 
-        filemenu = tk.Menu(menu,tearoff=0)
+        filemenu = tkinter.Menu(menu,tearoff=0)
         menu.add_cascade(label="File",menu=filemenu,underline=0)
         filemenu.add_command(label="Open",command=self.Open)
         filemenu.add_command(label="Save")
@@ -288,30 +401,30 @@ class Foxhole(tk.Frame):
         filemenu.add_separator()
         filemenu.add_command(label="Exit",command=self.Quit)
 
-        editmenu = tk.Menu(menu,tearoff=0)
+        editmenu = tkinter.Menu(menu,tearoff=0)
         menu.add_cascade(label="Edit",menu=editmenu,underline=0)
         editmenu.add_command(label="Length",command=self.Length,underline=0)
         editmenu.add_command(label="Width",command=self.Width,underline=0)
         editmenu.add_command(label="Visits/day",command=self.Visits,underline=0)
         editmenu.add_command(label="Poison days",command=self.Poison,underline=0)
 
-        self.tkgeometry=tk.StringVar()
+        self.tkgeometry=tkinter.StringVar()
         self.tkgeometry.set(Param.geometry)
-        geomenu = tk.Menu(editmenu,tearoff=0)
+        geomenu = tkinter.Menu(editmenu,tearoff=0)
         editmenu.add_cascade(label="Geometry",menu=geomenu,underline=0)
         geomenu.add_radiobutton(label="Grid",variable=self.tkgeometry,value="grid",command=self.Radio,underline=0)
         geomenu.add_radiobutton(label="Circle",variable=self.tkgeometry,value="circle",command=self.Radio,underline=0)
         geomenu.add_radiobutton(label="Triangle",variable=self.tkgeometry,value="triangle",command=self.Radio,underline=0)
 
-        self.tkconnection=tk.StringVar()
+        self.tkconnection=tkinter.StringVar()
         self.tkconnection.set(Param.connection)
-        connectmenu = tk.Menu(editmenu,tearoff=0)
+        connectmenu = tkinter.Menu(editmenu,tearoff=0)
         editmenu.add_cascade(label="Connections",menu=connectmenu,underline=0)
         connectmenu.add_radiobutton(label="Rectangular (4)",variable=self.tkconnection,value="rectangular",command=self.Radio,underline=0)
         connectmenu.add_radiobutton(label="Hexagonal (6)",variable=self.tkconnection,value="hexagonal",command=self.Radio,underline=0)
-        connectmenu.add_radiobutton(label="Ovtagonal (8)",variable=self.tkconnection,value="octagonal",command=self.Radio,underline=0)
+        connectmenu.add_radiobutton(label="Octagonal (8)",variable=self.tkconnection,value="octagonal",command=self.Radio,underline=0)
 
-        helpmenu = tk.Menu(menu,tearoff=0)
+        helpmenu = tkinter.Menu(menu,tearoff=0)
         menu.add_cascade(label="Help",menu=helpmenu)
         helpmenu.add_command(label="About",command=self.about)
 
@@ -324,7 +437,7 @@ def main(args):
     void = Param()
      
     while True:
-        Foxhole(master=tk.Tk()).mainloop()
+        Foxhole(master=tkinter.Tk()).mainloop()
 
 if __name__ == "__main__":
     # execute only if run as a script

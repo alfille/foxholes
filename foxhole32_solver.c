@@ -310,7 +310,7 @@ int main( int argc, char **argv )
     }
     premadeMovesCreate(); // array of moves
     
-    // Execu7t search (different if more than 1 poisoned day)
+    // Execute search (different if more than 1 poisoned day)
     if ( poison < 2 ) {
         // Does full backtrace to show full winning strategy
         lowPoison() ;
