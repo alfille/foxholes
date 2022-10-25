@@ -142,7 +142,7 @@ typedef enum {
 
 // function prototypes
 int main( int argc, char **argv ) ;
-void help( void ) ;
+void help( char * progname ) ;
 char * geoName( Geometry_t g ) ;
 char * connName( Connection_t c ) ;
 void printStatus() ;
@@ -186,7 +186,7 @@ int main( int argc, char **argv )
     while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:j:J:" )) != -1 ) {
         switch ( c ) {
         case 'h':
-            help() ;
+            help(argv[0]) ;
             break ;
         case 'l':
         case 'L':
@@ -255,7 +255,7 @@ int main( int argc, char **argv )
             }
             break ;
         default:
-            help();
+            help(argv[0]);
             break ;
         }
     }
@@ -401,26 +401,7 @@ Validation_t validate( void ) {
     return v;
 }
 
-void help( void ) {
-    printf("Foxhole32 -- solve the foxhole puzzle\n") ;
-    printf("\tsee https://github.com/alfille/doublefox.github.io\n") ;
-    printf("\n") ;
-    printf("By Paul H Alfille 2022 -- MIT license\n") ;
-    printf("\n") ;
-    printf("\t-l 5\tlength (3 to 32 default 5)\n") ;
-    printf("\t-w 1\twidth (1 to 10 but max holes 32)") ;
-    printf("\n") ;
-    printf("\t-c\tfoxholes in a Circle\n") ;
-    printf("\t-g\tfoxholes in a Grid\n") ;
-    printf("\t-o\tfoxholes Offset\n") ;
-    printf("\n") ;
-    printf("\t-v 1\tholes Visited per day\n") ;
-    printf("\t-p 0\tdays visited holes are Poisoned") ;
-    printf("\n") ;
-    printf("\t-u\tperiodic Updates\n") ;
-    printf("\t-h\thelp\n") ;
-    exit(0) ;
-}
+#include "help.c"
 
 char * geoName( Geometry_t g ) {
 	switch (g) {
