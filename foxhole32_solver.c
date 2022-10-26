@@ -144,7 +144,7 @@ void getOpts( int argc, char ** argv ) ;
 void help( char * progname ) ;
 char * geoName( Geometry_t g ) ;
 char * connName( Connection_t c ) ;
-void printStatus() ;
+void printStatus( char * progname ) ;
 Validation_t validate( void ) ;
 
 void gamesMapCreate() ;
@@ -182,6 +182,7 @@ void jsonOut( void ) ;
 #include "validate.c"
 #include "jumpHolesCreate.c"
 #include "jsonOut.c"
+#include "status.c"
 
 int main( int argc, char **argv )
 {
@@ -189,7 +190,7 @@ int main( int argc, char **argv )
     getOpts(argc,argv) ;
     
     // Print final arguments
-    printStatus();    
+    printStatus(argv[0]);    
     
     // Set all bits and saet up pre-computed arrays
     Game_all = 0;
@@ -231,45 +232,6 @@ int main( int argc, char **argv )
             fclose( jfile ) ;
         }
     }
-}
-
-char * geoName( Geometry_t g ) {
-	switch (g) {
-		case Circle:
-			return "circle";
-		case Triangle:
-			return "triangle";
-		case Grid:
-			return "grid";
-		default:
-			return "unknown_geometry";
-		}
-}
-
-char * connName( Connection_t c ) {
-    switch (c) {
-        case Rectangular:
-            return "rectangular";
-        case Hexagonal:
-            return "hexagonal";
-        case Octagonal:
-            return "octagonal";
-        default:
-            return "unknown_connection";
-        }
-}
-
-void printStatus() {
-    printf("Foxhole32 solver -- {c} 2022 Paul H Alfille\n");
-    printf("\n");
-    printf("Length %d X Width %d\n",xlength, ylength);
-    printf("\t total %d holes \n",holes);
-    printf("Geometry_t: %s\n",geoName(geo));
-    printf("Connection: %s\n",connName(connection));
-    printf("\n");
-    printf("%d holes visited per day\n",visits);
-    printf("\tHoles poisoned for %d days\n",poison);
-    printf("\n");
 }
 
 void gamesMapCreate() {
