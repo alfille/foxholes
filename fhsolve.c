@@ -89,9 +89,9 @@ FILE * jfile ;
 // Arrays holding winning moves and game positions
 int victoryDay = -1 ;
 
-Bits_t Game[MaxDays+1];
-Bits_t MovePlus[MaxPoison+MaxDays+1];
-Bits_t * Move = MovePlus + MaxPoison ; // allows prior space for poisons
+Bits_t victoryGame[MaxDays+1];
+Bits_t victoryMovePlus[MaxPoison+MaxDays+1];
+Bits_t * victoryMove = victoryMovePlus + MaxPoison ; // allows prior space for poisons
 
 // For recursion
 
@@ -138,6 +138,7 @@ void jsonOut( void ) ;
 #include "help.c"
 #include "validate.c"
 #include "jumpHolesCreate.c"
+#include "jsonOut.c"
 
 int main( int argc, char **argv )
 {
@@ -175,8 +176,8 @@ int main( int argc, char **argv )
             printf("Victory in %d days\n",victoryDay);
             printf("Winning Strategy:\n");
             for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-                printf("Day%3d Move ## Game \n",d);
-                showDoubleBits( Move[d],Game[d] ) ;
+                printf("Day%3d victoryMove ## victoryGame \n",d);
+                showDoubleBits( victoryMove[d],victoryGame[d] ) ;
             }
             break ;
         case lost:
@@ -302,10 +303,10 @@ Searchstate_t calcMove( int day ) {
         }
     }
 
-    Bits_t thisGame = Game[day] ;
+    Bits_t thisGame = victoryGame[day] ;
 
     // clear moves
-    thisGame &= ~Move[day] ;
+    thisGame &= ~victoryMove[day] ;
 
     // calculate where they jump to
     Bits_t new_game = Game_none ;
@@ -317,12 +318,12 @@ Searchstate_t calcMove( int day ) {
 
     // do poisoning
     for ( int p=0 ; p<poison ; ++p ) {
-        new_game &= ~Move[day-p] ;
+        new_game &= ~victoryMove[day-p] ;
     }
 
     // Victory? (No foxes)
     if ( new_game==Game_none ) {
-        Game[day+1] = new_game ;
+        victoryGame[day+1] = new_game ;
         victoryDay = day+1 ;
         return won ;
     }
@@ -334,18 +335,18 @@ Searchstate_t calcMove( int day ) {
     }
     
     // Valid new game, continue further
-    Game[day+1] = new_game ;
+    victoryGame[day+1] = new_game ;
     return forward ;
 }
 
 Searchstate_t firstDay( void ) {
     // set up Games and Moves
     for( int i=0 ; i<=MaxDays ; ++i ) { // forward
-        Game[i] = Game_all ;
-        Move[i] = Game_none ;
+        victoryGame[i] = Game_all ;
+        victoryMove[i] = Game_none ;
     }
     for( int i=0 ; i<=MaxPoison ; ++i ) { // backward
-        MovePlus[i] = Game_none ;
+        victoryMovePlus[i] = Game_none ;
     }
     gamesSeenAdd( Game_all ) ;
 
@@ -364,7 +365,7 @@ Searchstate_t firstDay( void ) {
 }
 
 Searchstate_t nextDay( int day ) {
-    // Game is set for this day
+    // victoryGame is set for this day
     // Moves are tested for this day
     int ovrflw = 0 ;
 
@@ -374,7 +375,7 @@ Searchstate_t nextDay( int day ) {
     
     
     for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-        Move[day] = Loc.Possible[ip] ; // actual move (and poisoning)
+        victoryMove[day] = Loc.Possible[ip] ; // actual move (and poisoning)
                 
         switch( calcMove( day ) ) {
             case won:
@@ -434,38 +435,4 @@ void premadeMovesCreate( void ) {
     // recursive fill of premadeMoves
     premadeMovesRecurse( 0, visits, Game_none );
     Loc.Sorted = Loc.Possible + Loc.iPossible ;
-}
-
-#define QQ(x) "\"" #x "\"" 
-
-void jsonOut( void ) {
-    // output settings and moves
-    fprintf(jfile,"{");
-        fprintf(jfile, QQ(length)":%d,\n", xlength);
-        fprintf(jfile, QQ(width)":%d,\n",  ylength);
-        fprintf(jfile, QQ(visits)":%d,\n", visits );
-        fprintf(jfile, QQ(connection)":"QQ(%s)",\n", connName(connection) );
-        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", geoName(geo) );
-        if ( victoryDay >= 0 ) {
-            fprintf(jfile, QQ(days)":%d,\n", victoryDay );
-            if ( poison < 2 ) { // low poison, backtrace possible
-                fprintf(jfile, QQ(moves)":[" ) ;
-                    for ( int d=1; d<=victoryDay ; ++d ) {
-                        fprintf(jfile,"[");
-                        int v = 0 ;
-                        for ( int b=0 ; b<holes ; ++b ) {
-                            if ( getB(Move[d],b) ) {
-                                ++v ;
-                                fprintf(jfile,"%d%s",b,v==visits?"":",");
-                            }
-                        }
-                        fprintf(jfile,"]%s",d==victoryDay?"":",");
-                    }
-                fprintf(jfile,"],\n") ;
-            }
-            fprintf(jfile, QQ(solved)":%s", "true" ); // last, no comma
-        } else {
-            fprintf(jfile, QQ(solved)":%s", "false" ); // last, no comma
-        }   
-    fprintf(jfile,"}\n");
 }

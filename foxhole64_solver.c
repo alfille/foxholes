@@ -107,11 +107,9 @@ int gameListStart ;
 int gameListNext ;
 
 // Arrays holding winning moves and game positions
-struct {
-    int day; // >=0 for success
-    Bits_t game[MaxDays+1] ;
-    Bits_t move[MaxDays+1] ;
-} Victory ; 
+int victoryDay;  // >=0 for success
+Bits_t victoryGame[MaxDays+1] ;
+Bits_t victoryMove[MaxDays+1] ;
 
 // structure holding backtracing info to recreate winning strategy
 // circular buffer of prior game states with references from active buffer and back buffer
@@ -186,6 +184,7 @@ void jsonOut( void ) ;
 #include "help.c"
 #include "validate.c"
 #include "jumpHolesCreate.c"
+#include "jsonOut.c"
 
 int main( int argc, char **argv )
 {
@@ -200,7 +199,7 @@ int main( int argc, char **argv )
     for ( int h=0 ; h<holes ; ++h ) {
         setB( Game_all, h ) ;
     }
-    Victory.day = -1;
+    victoryDay = -1;
 
     if ( update ) {
         printf("Setting up moves\n");
@@ -379,7 +378,7 @@ void backTraceExecute( int generation, Bits_t refer ) {
     // generation is index in backTraceState entries list (in turn indexes circular buffer)
     while ( refer != Game_all ) {
         //printf("backtrace generation=%d day=%d refer=%d\n",generation,backTraceState.entries[generation].day,refer) ;
-        Victory.game[backTraceState.entries[generation].day] = backTraceList[refer].game ;
+        victoryGame[backTraceState.entries[generation].day] = backTraceList[refer].game ;
         refer = backTraceList[refer].refer ;
         if ( generation == backTraceState.start ) {
             break ;
@@ -418,8 +417,8 @@ void backTraceRestart( int lastDay, int thisDay ) {
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
-    Bits_t current = Victory.game[lastDay] ;
-    Bits_t target = Victory.game[thisDay] ;
+    Bits_t current = victoryGame[lastDay] ;
+    Bits_t target = victoryGame[thisDay] ;
 
     gameListNext = 0 ;
     gameListStart = gameListNext ;
@@ -459,8 +458,8 @@ void fixupTrace( void ) {
         int lastDay = 0 ;
         int gap = False ;
 
-        for ( int d=1 ; d<Victory.day ; ++d ) { // go through days
-            if ( Victory.game[d] == Game_all ) {
+        for ( int d=1 ; d<victoryDay ; ++d ) { // go through days
+            if ( victoryGame[d] == Game_all ) {
                 // unknown solution
                 gap = True ;
                 if ( ! unsolved ) {
@@ -486,15 +485,15 @@ void fixupTrace( void ) {
 void fixupMoves( void ) {
     Bits_t move[1] ; // at most one poison day
     
-    for ( int Day=1 ; Day < Victory.day ; ++Day ) {
+    for ( int Day=1 ; Day < victoryDay ; ++Day ) {
         // solve unknown moves
-        if ( Victory.move[Day] == Game_none ) {
+        if ( victoryMove[Day] == Game_none ) {
             if ( update ) {
                 printf("Fixup Moves Day %d\n",Day);
             }
             for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
                 Bits_t newGame = Game_none ;
-                Bits_t thisGame = Victory.game[Day-1] ;
+                Bits_t thisGame = victoryGame[Day-1] ;
                 move[0] = Loc.Possible[ip] ; // actual move (and poisoning)
 
                 // clear moves
@@ -513,8 +512,8 @@ void fixupMoves( void ) {
                 }
 
                 // Match target?
-                if ( newGame == Victory.game[Day] ) {
-                    Victory.move[Day] = move[0] ;
+                if ( newGame == victoryGame[Day] ) {
+                    victoryMove[Day] = move[0] ;
                     break ;
                 }
             }
@@ -530,9 +529,9 @@ void lowPoison( void ) {
         fixupMoves() ; // fill in moves
         printf("\n");
         printf("Winning Strategy:\n");
-        for ( int d = 0 ; d < Victory.day+1 ; ++d ) {
+        for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
             printf("Day%3d Move ## Game \n",d);
-            showDoubleBits( Victory.move[d],Victory.game[d] ) ;
+            showDoubleBits( victoryMove[d],victoryGame[d] ) ;
         }
         break ;
     default:
@@ -550,8 +549,8 @@ Searchstate_t lowPoisonCreate( void ) {
     
     // Set winning path to unknown
     for ( int d=0 ; d<MaxDays ; ++d ) {
-        Victory.game[d] = Game_all ;
-        Victory.move[d] = Game_none ;
+        victoryGame[d] = Game_all ;
+        victoryMove[d] = Game_none ;
     }
     
     // set solver state
@@ -600,12 +599,12 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
                     
             switch( calcMove( move, gameList[iold].game, &newT, target ) ) {
                 case won:
-                    Victory.game[Day] = target ;
-                    Victory.move[Day] = move[0] ;
-                    Victory.game[Day-1] = gameList[iold].game ;
+                    victoryGame[Day] = target ;
+                    victoryMove[Day] = move[0] ;
+                    victoryGame[Day-1] = gameList[iold].game ;
                     if ( target == Game_none ) {
                         // real end of game
-                        Victory.day = Day ;
+                        victoryDay = Day ;
                     }
                     backTraceExecute( backDEC(backTraceState.next), gameList[iold].refer ) ;
                     return won;
@@ -696,12 +695,12 @@ Searchstate_t highPoisonDay( int Day, Bits_t target ) {
                     
             switch( calcMove( move, gameList[iold].game, &newT, target ) ) {
                 case won:
-                    Victory.game[Day] = target ;
-                    Victory.move[Day] = move[0] ;
-                    Victory.game[Day-1] = gameList[iold].game ;
+                    victoryGame[Day] = target ;
+                    victoryMove[Day] = move[0] ;
+                    victoryGame[Day-1] = gameList[iold].game ;
                     if ( target == Game_none ) {
                         // real end of game
-                        Victory.day = Day ;
+                        victoryDay = Day ;
                     }
                     return won;
                 case forward:
@@ -754,38 +753,4 @@ void premadeMovesCreate( void ) {
     // recursive fill of premadeMoves
     premadeMovesRecurse( 0, visits, Game_none );
     Loc.Sorted = Loc.Possible + Loc.iPossible ;
-}
-
-#define QQ(x) "\"" #x "\"" 
-
-void jsonOut( void ) {
-    // output settings and moves
-    fprintf(jfile,"{");
-        fprintf(jfile, QQ(length)":%d,\n", xlength);
-        fprintf(jfile, QQ(width)":%d,\n",  ylength);
-        fprintf(jfile, QQ(visits)":%d,\n", visits );
-        fprintf(jfile, QQ(connection)":"QQ(%s)",\n", connName(connection) );
-        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", geoName(geo) );
-        if ( Victory.day >= 0 ) {
-            fprintf(jfile, QQ(days)":%d,\n", Victory.day );
-            if ( poison < 2 ) { // low poison, backtrace possible
-                fprintf(jfile, QQ(moves)":[" ) ;
-                    for ( int d=1; d<=Victory.day ; ++d ) {
-                        fprintf(jfile,"[");
-                        int v = 0 ;
-                        for ( int b=0 ; b<holes ; ++b ) {
-                            if ( getB(Victory.move[d],b) ) {
-                                ++v ;
-                                fprintf(jfile,"%d%s",b,v==visits?"":",");
-                            }
-                        }
-                        fprintf(jfile,"]%s",d==Victory.day?"":",");
-                    }
-                fprintf(jfile,"],\n") ;
-            }
-            fprintf(jfile, QQ(solved)":%s", "true" ); // last, no comma
-        } else {
-            fprintf(jfile, QQ(solved)":%s", "false" ); // last, no comma
-        }   
-    fprintf(jfile,"}\n");
 }
