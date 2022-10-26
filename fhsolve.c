@@ -116,8 +116,8 @@ Validation_t validate( void ) ;
 void gamesSeenCreate() ;
 void jumpHolesCreate( Bits_t * J ) ;
 
-void premadeMovesCreate( void ) ;
-void premadeMovesRecurse( int start_hole, int left, Bits_t pattern ) ;
+size_t binomial( int N, int M ) ;
+int premadeMovesRecurse( Bits_t * Moves, int index, int start_hole, int left, Bits_t pattern ) ;
 
 Searchstate_t firstDay( void ) ;
 Searchstate_t nextDay( int day ) ;
@@ -140,6 +140,7 @@ void jsonOut( void ) ;
 #include "jumpHolesCreate.c"
 #include "jsonOut.c"
 #include "status.c"
+#include "moves.c"
 
 int main( int argc, char **argv )
 {
@@ -160,11 +161,20 @@ int main( int argc, char **argv )
     }
     jumpHolesCreate(Loc.Jumps); // array of fox jump locations
     Loc.Possible = Loc.Jumps + holes ;
+    Loc.free -= holes ;
 
     if ( update ) {
         printf("Starting search\n");
     }
-    premadeMovesCreate(); // array of moves
+    Loc.iPossible = binomial( holes, visits );
+    if ( Loc.iPossible > Loc.free ) {
+        // check memory although unlikely exhausted at this stage
+        fprintf( stderr, "Memory exhaused from possible move list\n");
+        exit(1);
+    }
+    premadeMovesRecurse( Loc.Possible, 0, 0, visits, Game_none ); // array of moves
+    Loc.Sorted = Loc.Possible + Loc.iPossible ;
+    Loc.free -= Loc.iPossible ;
     
     if ( update ) {
         printf("Setting up game array\n");
@@ -208,7 +218,7 @@ void gamesSeenCreate() {
     Loc.iSorted = 0 ;
     Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
     Loc.iUnsorted = 0 ;
-    Loc.free = STORESIZE - (Loc.Sorted - Loc.Jumps) ;
+    //Loc.free = STORESIZE - (Loc.Sorted - Loc.Jumps) ;
     //printf("Jump %p, Possible %p, Sort %p, Usort %p\n",Loc.Jumps,Loc.Possible,Loc.Sorted,Loc.Unsorted);
     //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
 }
@@ -364,37 +374,4 @@ Searchstate_t nextDay( int day ) {
         }
     }
     return ovrflw ? overflow : backward ;
-}
-
-
-void premadeMovesRecurse( int start_hole, int left, Bits_t pattern ) {
-    // index into premadeMoves (list of moves)
-    // start hole to start current level with
-    // level visit number (visits down to 1)
-    // pattern bitmap pattern to this point
-    for ( int h=start_hole ; h<holes-left+1 ; ++h ) { // scan through positions for this visit
-        Bits_t P = pattern ;
-        setB( P, h );
-        if ( left==1 ) { // last visit, put in array and increment index
-            Loc.Possible[Loc.iPossible] = P;
-            ++Loc.iPossible;
-            --Loc.free ;
-            if ( Loc.free == 0 ) {
-                // check memory although unlikely exhausted at this stage
-                fprintf( stderr, "Memory exhaused from possible move list\n");
-                exit(1);
-            }
-        } else { // recurse into futher visits
-            premadeMovesRecurse( h+1, left-1, P );
-        }
-    }
-}
-
-void premadeMovesCreate( void ) {
-    // Create bitmaps of all possible moves (permutations of visits bits in holes slots)
-    Loc.free = STORESIZE - holes ;
-
-    // recursive fill of premadeMoves
-    premadeMovesRecurse( 0, visits, Game_none );
-    Loc.Sorted = Loc.Possible + Loc.iPossible ;
 }

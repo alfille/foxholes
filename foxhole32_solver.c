@@ -150,8 +150,8 @@ Validation_t validate( void ) ;
 void gamesMapCreate() ;
 void jumpHolesCreate( Bits_t * J ) ;
 
-void premadeMovesCreate( void ) ;
-int premadeMovesRecurse( int index, int start, int level, Bits_t pattern ) ;
+size_t binomial( int N, int M ) ;
+int premadeMovesRecurse( Bits_t * Moves, int index, int start, int level, Bits_t pattern ) ;
 
 void highPoison( void ) ;
 searchState highPoisonCreate( void ) ;
@@ -183,6 +183,7 @@ void jsonOut( void ) ;
 #include "jumpHolesCreate.c"
 #include "jsonOut.c"
 #include "status.c"
+#include "moves.c"
 
 int main( int argc, char **argv )
 {
@@ -214,7 +215,16 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Starting search\n");
     }
-    premadeMovesCreate(); // array of moves
+
+    // calculate iPremadeMoves (Binomial coefficient holes,visits)
+    iPremadeMoves = binomial( holes, visits ) ; ;
+    premadeMoves = (Bits_t *) malloc( iPremadeMoves*sizeof(Bits_t) ) ;
+    if ( premadeMoves==NULL) {
+        fprintf(stderr,"Memory exhausted move array\n");
+        exit(1);
+    }
+    // recursive fill of premadeMoves
+    premadeMovesRecurse( premadeMoves, 0, 0, visits, Game_none );
     
     // Execute search (different if more than 1 poisoned day)
     if ( poison < 2 ) {
@@ -633,48 +643,4 @@ searchState highPoisonDay( int Day, Bits_t target ) {
         }
     }
     return gameListNext != gameListStart ? forward : lost ;
-}
-        
-int premadeMovesRecurse( int index, int start, int level, Bits_t pattern ) {
-    // index into premadeMoves (list of moves)
-    // start hole to start current level with
-    // level visit number (visits down to 1)
-    // pattern bitmap pattern to this point
-    for ( int h=start ; h<holes-level+1 ; ++h ) { // scan through positions for this visit
-        Bits_t P = pattern ;
-        setB( P, h );
-        if ( level==1 ) { // last visit, put in array and increment index
-            premadeMoves[index] = P;
-            ++index;
-        } else { // recurse into futher visits
-            index = premadeMovesRecurse( index, h+1, level-1, P );
-        }
-    }
-    return index;
-}
-
-void premadeMovesCreate( void ) {
-    // Create bitmaps of all possible moves (permutations of visits bits in holes slots)
-    uint64_t top,bot;
-    int v = visits ;
-
-    // calculate iPremadeMoves (Binomial coefficient holes,visits)
-    if (v>holes/2) {
-        v = holes-visits ;
-    }
-    top = 1;
-    bot = 1;
-    for ( int i=v ; i>0 ; --i ) {
-        top *= holes+1-i ;  
-        bot *= i ;
-    }
-    iPremadeMoves = top / bot ;
-    premadeMoves = (Bits_t *) malloc( iPremadeMoves*sizeof(Bits_t) ) ;
-    if ( premadeMoves==NULL) {
-        fprintf(stderr,"Memory exhausted move array\n");
-        exit(1);
-    }
-
-    // recursive fill of premadeMoves
-    premadeMovesRecurse( 0, 0, visits, Game_none );
 }

@@ -4,16 +4,16 @@
 // See https://github.com/alfille/foxholes
 
 char * geoName( Geometry_t g ) {
-	switch (g) {
-		case Circle:
-			return "circle";
-		case Triangle:
-			return "triangle";
-		case Grid:
-			return "grid";
-		default:
-			return "unknown_geometry";
-		}
+        switch (g) {
+                case Circle:
+                        return "circle";
+                case Triangle:
+                        return "triangle";
+                case Grid:
+                        return "grid";
+                default:
+                        return "unknown_geometry";
+                }
 }
 
 char * connName( Connection_t c ) {
