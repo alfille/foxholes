@@ -19,38 +19,12 @@
 typedef uint32_t Bits_t;
 typedef uint64_t Map_t;
 
-Bits_t Game_none = 0; // no foxes
-Bits_t Game_all ;
+#include "foxholes.h"
 
 Bits_t * premadeMoves = NULL ;
 int iPremadeMoves ;
 
 typedef int Move_t ;
-
-typedef enum { False, True } Bool_t ;
-
-typedef enum { Circle, Grid, Triangle } Geometry_t ;
-typedef enum { Rectangular, Hexagonal, Octagonal } Connection_t ;
-
-// Globals from command line
-int xlength = 5;
-int ylength = 1;
-int holes;
-int poison = 0;
-int visits = 1;
-Bool_t update = 0 ;
-Connection_t connection = Rectangular ;
-Geometry_t geo = Circle ;
-int searchCount = 0 ;
-Bool_t json = False ;
-Bool_t jsonfile = False ;
-FILE * jfile ;
-
-typedef enum {
-    Val_ok,
-    Val_fix,
-    Val_fail,
-} Validation_t ;
 
 // Limits
 #define MaxHoles 32
@@ -75,16 +49,6 @@ typedef enum {
 
 Map_t GamesMap[GAMESIZE]; // bitmap of all possible game states
     // indexed by foxes as bits to make a number
-
-// Jumps -- macros for convenient definitions
-
-// For moves -- go from x,y to index
-// index from x,y
-#define I(xx,yy) ( (xx) + (yy)*xlength )
-// index from x,y but wrap x if past end (circle)
-#define W(xx,yy) ( I( ((xx)+xlength)%xlength, (yy) ) )
-// Index into Triangle
-#define T(xx,yy) ( (yy)*((yy)+1)/2+(xx) )
 
 Bits_t * jumpHoles = NULL ; // bitmap for moves from a hole indexed by that hole
 
@@ -130,14 +94,6 @@ struct {
 #define backINC(x) ( ((x)+1) % backLook_length )
 #define backDEC(x) ( ((x)-1+backLook_length) % backLook_length )
 
-// For recursion
-typedef enum {
-    won, // all foxes caught
-    lost, // no more moves
-    forward, // go to next day
-    retry, // try another move for this day
-} searchState ;
-
 // function prototypes
 int main( int argc, char **argv ) ;
 void getOpts( int argc, char ** argv ) ;
@@ -154,14 +110,14 @@ size_t binomial( int N, int M ) ;
 int premadeMovesRecurse( Bits_t * Moves, int index, int start, int level, Bits_t pattern ) ;
 
 void highPoison( void ) ;
-searchState highPoisonCreate( void ) ;
-searchState highPoisonDay( int Day, Bits_t target ) ;
+Searchstate_t highPoisonCreate( void ) ;
+Searchstate_t highPoisonDay( int Day, Bits_t target ) ;
 
 void lowPoison( void ) ;
-searchState lowPoisonCreate( void ) ;
-searchState lowPoisonDay( int Day, Bits_t target ) ;
+Searchstate_t lowPoisonCreate( void ) ;
+Searchstate_t lowPoisonDay( int Day, Bits_t target ) ;
 
-searchState calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
+Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
 
 void backTraceCreate( void ) ;
 void backTraceAdd( int Day ) ;
@@ -248,7 +204,7 @@ void gamesMapCreate() {
     memset( GamesMap, 0, sizeof( GamesMap ) ) ;
 }
 
-searchState calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) {
+Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) {
     if ( update ) {
         ++searchCount ;
         if ( (searchCount & 0xFFFFFF) == 0 ) {
@@ -461,7 +417,7 @@ void lowPoison( void ) {
     }
 }
 
-searchState lowPoisonCreate( void ) {
+Searchstate_t lowPoisonCreate( void ) {
     // Solve for Poison <= 1
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
@@ -506,7 +462,7 @@ searchState lowPoisonCreate( void ) {
     return lost ;
 }
 
-searchState lowPoisonDay( int Day, Bits_t target ) {
+Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
     // poison <= 1
     
     Bits_t move[1] ; // for poisoning
@@ -553,7 +509,7 @@ void highPoison( void ) {
     highPoisonCreate() ;
 }
 
-searchState highPoisonCreate( void ) {
+Searchstate_t highPoisonCreate( void ) {
     // Solve Poison >1
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
@@ -596,7 +552,7 @@ searchState highPoisonCreate( void ) {
     return lost ;
 }
 
-searchState highPoisonDay( int Day, Bits_t target ) {
+Searchstate_t highPoisonDay( int Day, Bits_t target ) {
     typedef struct {
         Bits_t move[poison-1] ; 
     } Pstruct ;

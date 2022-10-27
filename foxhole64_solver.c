@@ -20,6 +20,8 @@
 
 typedef uint64_t Bits_t;
 
+#include "foxholes.h"
+
 #define STORESIZE 100000000
 Bits_t Store[STORESIZE] ;
 #define UNSORTSIZE 50
@@ -38,34 +40,6 @@ struct {
     .free = STORESIZE ,
 } ;
 
-Bits_t Game_none = 0; // no foxes
-Bits_t Game_all ;
-
-typedef enum { False, True } Bool_t ;
-
-typedef enum { Circle, Grid, Triangle } Geometry_t ;
-typedef enum { Rectangular, Hexagonal, Octagonal } Connection_t ;
-
-// Globals from command line
-int xlength = 5;
-int ylength = 1;
-int holes;
-int poison = 0;
-int visits = 1;
-Bool_t update = 0 ;
-Connection_t connection = Rectangular ;
-Geometry_t geo = Circle ;
-int searchCount = 0 ;
-Bool_t json = False ;
-Bool_t jsonfile = False ;
-FILE * jfile ;
-
-typedef enum {
-    Val_ok,
-    Val_fix,
-    Val_fail,
-} Validation_t ;
-
 // Limits
 #define MaxHoles 64
 #define MaxDays 300
@@ -77,16 +51,6 @@ typedef enum {
 #define setB( map, b ) map |= (long1 << (b))
 #define clearB( map, b ) map &= ~(long1 << (b))
 #define getB( map, b ) (((map) & (long1 << (b))) ? 1:0)
-
-// Jumps -- macros for convenient definitions
-
-// For moves -- go from x,y to index
-// index from x,y
-#define I(xx,yy) ( (xx) + (yy)*xlength )
-// index from x,y but wrap x if past end (circle)
-#define W(xx,yy) ( I( ((xx)+xlength)%xlength, (yy) ) )
-// Index into Triangle
-#define T(xx,yy) ( (yy)*((yy)+1)/2+(xx) )
 
 // Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
 
@@ -128,14 +92,6 @@ struct {
 
 #define backINC(x) ( ((x)+1) % backLook_length )
 #define backDEC(x) ( ((x)-1+backLook_length) % backLook_length )
-
-// For recursion
-typedef enum {
-    won, // all foxes caught
-    lost, // no more moves
-    forward, // go to next day
-    retry, // try another move for this day
-} Searchstate_t ;
 
 // function prototypes
 int main( int argc, char **argv ) ;
