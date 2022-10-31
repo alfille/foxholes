@@ -150,6 +150,13 @@ Since potential states is `2^holes` bitmap is practical up to ~32 holes, and lar
 * Extra memory (or computation) for remembering winning path
 * Guarantees shortest winning path
 
+### Poison problems
+One of the choices for a foxhole game design is adding some days of poisoning inspected holes, making them uninhabitable for foxes.
+
+Unfortunately, poisoning for more than 1 day adds complexity to the Game State -- the Game position should include some days of extra history.
+
+None of the solvers include multi-day poisoning in their Game State. So solutions found will be valid (especially for `fhsolve`) but may not be optimal. Nor will the search be exhaustive.
+
 ## Implementation
 ### Algorithms
 * foxhole32_solver
@@ -175,3 +182,5 @@ Extensive use of bitmaps for calculations:
 * Fox jumps (by hole)
 
 In addition, calculating the inspection and fox move is by bit arithmetic
+
+### Backtracking
