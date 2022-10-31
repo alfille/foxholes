@@ -29,7 +29,7 @@ typedef int Move_t ;
 // Limits
 #define MaxHoles 32
 #define MaxDays 300
-#define MaxPoison 4
+#define MaxPoison 1
 
 // Bit macros
 // 32 bit for games, moves, jumps
