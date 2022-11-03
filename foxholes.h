@@ -28,6 +28,9 @@ Bool_t json = False ;
 Bool_t jsonfile = False ;
 FILE * jfile ;
 
+int poison_plus ; // max( 1, poison )
+int poison_size ; // poison_plus bytes
+
 typedef enum {
     Val_ok,
     Val_fix,

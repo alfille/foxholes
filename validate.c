@@ -41,6 +41,9 @@ Validation_t validate( void ) {
         poison = MaxPoison;
         v = Val_fix ;
     }
+    
+    poison_plus = poison==0 ? 1 : poison ;
+    poison_size = poison_plus * sizeof ( Bits_t ) ;
 
     // visits (lower)
     if (visits<1) {
