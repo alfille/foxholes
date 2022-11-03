@@ -128,6 +128,8 @@ Searchstate_t lowPoisonCreate( void ) ;
 Searchstate_t lowPoisonDay( int Day, Bits_t target ) ;
 
 Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
+Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) ;
+
 int compare(const void* numA, const void* numB) ;
 void gamesSeenAdd( Bits_t g ) ;
 Bool_t gamesSeenFound( Bits_t g ) ;
@@ -266,6 +268,17 @@ Bool_t gamesSeenFound( Bits_t g ) {
     return False ;
 }
 
+Bool_t gamesSeenFoundP( Bits_t * g ) {
+    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   poison_size, compare ) != NULL ) {
+        return True ;
+    }
+    if (   lfind( g, Loc.Unsorted, &Loc.iUnsorted, poison_size, compare ) != NULL ) {
+        return True ;
+    }
+    gamesSeenAdd( g ) ;
+    return False ;
+}
+
 Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) {
     if ( update ) {
         ++searchCount ;
@@ -297,6 +310,56 @@ Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t 
 
     // Already seen?
     if ( gamesSeenFound( *new_game ) == True ) {
+        // game configuration already seen
+        return retry ; // means try another move
+    }
+    
+    // Valid new game, continue further
+    return forward ;
+}
+
+Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) {
+	// comming in, move has game,newmove,move0,..move[p-2]
+	// returning move has newgame,newmove,move0,...,move[n-p]
+	// target points to:
+	//   NULL Game_none
+	//   non--NULL, move array (poison_plus length)
+    if ( update ) {
+        ++searchCount ;
+        if ( (searchCount & 0xFFFFFF) == 0 ) {
+            printf(".\n");
+        }
+    }
+
+    // clear moves
+    Bits_t thisGame = move[0] ;
+    thisGame &= ~move[1] ;
+
+    // calculate where they jump to
+    move[0] = Game_none ;
+    for ( int j=0 ; j<holes ; ++j ) {
+        if ( getB( thisGame, j ) ) { // fox currently
+             move[0] |= Loc.Jumps[j] ; // jumps to here
+        }
+    }
+
+    // do poisoning
+    for ( int p=1 ; p<=poison ; ++p ) {
+        move[0] &= ~move[p] ;
+    }
+    
+    // Victory? (No foxes)
+    if ( target == NULL ) {
+		if ( move[0]==Game_none ) {
+			return won ;
+		}
+	} else {
+		if ( memcmp( move, target, poison_size ) == 0 ) {
+			return won ;
+		}
+	}
+    // Already seen?
+    if ( gamesSeenFoundP( move ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
