@@ -29,7 +29,7 @@ typedef int Move_t ;
 // Limits
 #define MaxHoles 32
 #define MaxDays 300
-#define MaxPoison 1
+#define MaxPoison 1 // No long poison! -- use foxhole64 or fhsolver instead
 
 // Bit macros
 // 32 bit for games, moves, jumps
@@ -65,7 +65,7 @@ struct tryStruct {
 } ;
 struct tryStruct gameList[gamestate_length]; // fixed size array holding intermediate game states
 struct tryStruct backTraceList[gamestate_length]; // fixed size array holding intermediate game states
-void * pGL = NULL ; // allocated poisoned move storage
+
 // pointers to start and end of circular buffer
 int gameListStart ;
 int gameListNext ;
@@ -108,10 +108,6 @@ void jumpHolesCreate( Bits_t * J ) ;
 
 size_t binomial( int N, int M ) ;
 int premadeMovesRecurse( Bits_t * Moves, int index, int start, int level, Bits_t pattern ) ;
-
-void highPoison( void ) ;
-Searchstate_t highPoisonCreate( void ) ;
-Searchstate_t highPoisonDay( int Day, Bits_t target ) ;
 
 void lowPoison( void ) ;
 Searchstate_t lowPoisonCreate( void ) ;
@@ -182,15 +178,10 @@ int main( int argc, char **argv )
     // recursive fill of premadeMoves
     premadeMovesRecurse( premadeMoves, 0, 0, visits, Game_none );
     
-    // Execute search (different if more than 1 poisoned day)
-    if ( poison < 2 ) {
-        // Does full backtrace to show full winning strategy
-        lowPoison() ;
-    } else {
-        // Just shows shortest time
-        highPoison() ;
-    }
-    
+    // Execute search (never more than 1 poisoned day)
+	// Does full backtrace to show full winning strategy
+	lowPoison() ;
+
     // print json
     if (json) {
         jsonOut() ;
@@ -504,99 +495,3 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
     return gameListNext != gameListStart ? forward : lost ;
 }
 
-
-void highPoison( void ) {
-    highPoisonCreate() ;
-}
-
-Searchstate_t highPoisonCreate( void ) {
-    // Solve Poison >1
-    // Set up arrays of game states
-    //  will evaluate all states for each day for all moves and add to next day if unique
-
-    gameListNext = 0 ;
-    gameListStart = gameListNext ;
-    
-    typedef struct {
-        Bits_t move[poison-1] ; 
-    } Pstruct ;
-    pGL = malloc( gamestate_length * sizeof(Pstruct) ) ;
-    Pstruct * gameListPoison = pGL ;
-
-    // initially no poison history of course
-    for ( int p=1 ; p<poison ; ++p ) {
-        gameListPoison[gameListStart].move[p-1] = 0 ; // no prior moves
-    }
-
-    // set Initial position
-    gameList[gameListNext].game = Game_all ;
-    setB64( gameList[gameListNext].game ) ; // flag this configuration
-    ++gameListNext ;
-    
-
-    // Now loop through days
-    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
-        printf("Day %d, States: %d, Moves %d\n",Day+1,DIFF(gameListNext,gameListStart),iPremadeMoves);
-        switch ( highPoisonDay(Day,Game_none) ) {
-            case won:
-                printf("Victory in %d days!\n",Day ) ; // 0 index
-                return won ;
-            case lost:
-                printf("No solution despite %d days\n",Day );
-                return lost ;
-            default:
-                break ;
-        }
-    }
-    printf( "Exceeded %d days.\n",MaxDays ) ;
-    return lost ;
-}
-
-Searchstate_t highPoisonDay( int Day, Bits_t target ) {
-    typedef struct {
-        Bits_t move[poison-1] ; 
-    } Pstruct ;
-    Pstruct * gameListPoison = pGL ;
-    
-    Bits_t move[MaxPoison] ; // for poisoning
-
-    int iold = gameListStart ; // need to define before loop
-    gameListStart = gameListNext ;
-        
-    for (  ; iold!=gameListStart ; iold=INC(iold) ) { // each possible position
-        for ( int ip=0 ; ip<iPremadeMoves ; ++ip ) { // each possible move
-            Bits_t newT ;
-            move[0] = premadeMoves[ip] ; // actual move (and poisoning)
-            for ( int p=1 ; p<poison ; ++p ) {
-                move[p] = gameListPoison[iold].move[p-1] ;
-            }
-                    
-            switch( calcMove( move, gameList[iold].game, &newT, target ) ) {
-                case won:
-                    victoryGame[Day] = target ;
-                    victoryMove[Day] = move[0] ;
-                    victoryGame[Day-1] = gameList[iold].game ;
-                    if ( target == Game_none ) {
-                        // real end of game
-                        victoryDay = Day ;
-                    }
-                    return won;
-                case forward:
-                    // Add this game state to the furture evaluation list
-                    gameList[gameListNext].game = newT ;
-                    for ( int p=poison-1 ; p>0 ; --p ) {
-                        gameListPoison[gameListNext].move[p] = move[p-1] ;
-                    }
-                    gameListNext = INC(gameListNext) ;
-                    if ( gameListNext == iold ) { // head touches tail
-                        printf("Too large a solution space\n");
-                        return lost ;
-                    }
-                    break ;
-                default:
-                    break ;
-            }
-        }
-    }
-    return gameListNext != gameListStart ? forward : lost ;
-}

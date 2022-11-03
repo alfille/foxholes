@@ -53,7 +53,6 @@ struct {
 #define getB( map, b ) (((map) & (long1 << (b))) ? 1:0)
 
 // Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
-
 #define gamestate_length 0x100000
 #define INC(x) ( ((x)+1) % gamestate_length )
 #define DEC(x) ( ((x)+gamestate_length-1) % gamestate_length )
@@ -69,6 +68,18 @@ void * pGL = NULL ; // allocated poisoned move storage
 // pointers to start and end of circular buffer
 int gameListStart ;
 int gameListNext ;
+
+// Poison version -- uses same space
+// Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
+// All in offset index (Bits_t size)
+#define gamestate_lengthP = ( sizeof(gameList)/sizeof(Bits_t) )
+#define INCP(x) ( ((x)+poison_plus+1) % gamestate_lengthP )
+#define DECP(x) ( ((x)+gamestate_lengthP-poison_plus-1) % gamestate_lengthP )
+#define DIFFP(x,y) ( ( ( gamestate_lengthP+(x)-(y) ) % gamestate_lengthP ) / (poison_plus + 1 ) )
+
+#define ReferP(x) = (x)
+#define GameP(x) = ((x)+1)
+#define MoveP(x) = ((x)+2)
 
 // Arrays holding winning moves and game positions
 int victoryDay;  // >=0 for success
