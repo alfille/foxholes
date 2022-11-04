@@ -73,11 +73,14 @@ int gameListNext ;
 // Poison version -- uses same space
 // Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
 // All in offset index (Bits_t size)
-#define gamestate_lengthP = ( sizeof(gameList)/sizeof(Bits_t) )
+
+#define gamestate_lengthP ( gamestate_length * sizeof(struct tryStruct)/sizeof(Bits_t) )
 #define INCP(x) ( ((x)+poison_plus+1) % gamestate_lengthP )
 #define DECP(x) ( ((x)+gamestate_lengthP-poison_plus-1) % gamestate_lengthP )
 #define DIFFP(x,y) ( ( ( gamestate_lengthP+(x)-(y) ) % gamestate_lengthP ) / (poison_plus + 1 ) )
 
+Bits_t * gameListP = (Bits_t *) gameList ;
+Bits_t * backTraceListP = (Bits_t *) backTraceList ;
 #define ReferP(x) = (x)
 #define GameP(x) = ((x)+1)
 #define MoveP(x) = ((x)+2)
@@ -746,6 +749,48 @@ Searchstate_t highPoisonDay( int Day, Bits_t target ) {
                     }
                     break ;
                 default:
+                    break ;
+            }
+        }
+    }
+    return gameListNext != gameListStart ? forward : lost ;
+}
+Searchstate_t highPoisonDayP( int Day, Bits_t * target ) {
+    Bits_t move[poison_plus+1] ; // for poisoning
+
+    int iold = gameListStart ; // need to define before loop
+    gameListStart = gameListNext ;
+        
+    for (  ; iold!=gameListStart ; iold=INCP(iold) ) { // each possible position
+		memmove( move+1, gameListP+iold, poison_size ) ; // leave space at start
+		Bits_t thisGame = move[1] ;
+        for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+            move[0] = thisGame ;
+            move[1]= Loc.Possible[ip] ; // actual move (and poisoning)
+            switch( calcMoveP( move, target ) ) {
+                case won:
+                    victoryGame[Day] = move[0] ;
+                    victoryMove[Day] = move[0] ;
+                    victoryGame[Day-1] = thisGame ;
+                    for ( int p=0 ; p<=poison ; ++p ) {
+						victoryMove[ Day-p ] = move[p+1] ;
+					}
+                    if ( target == NULL ) {
+                        // real end of game
+                        victoryDay = Day ;
+                    }
+                    return won;
+                case forward:
+                    // Add this game state to the furture evaluation list
+                    memmove( gameListP + gameListNext, move, poison_size ) ;
+                    gameListNext = INCP(gameListNext) ;
+                    if ( gameListNext == iold ) { // head touches tail
+                        printf("Too large a solution space\n");
+                        return lost ;
+                    }
+                    break ;
+                default:
+					// next possible move
                     break ;
             }
         }
