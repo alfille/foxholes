@@ -124,8 +124,11 @@ size_t binomial( int N, int M ) ;
 int premadeMovesRecurse( Bits_t * Moves, int index, int start_hole, int left, Bits_t pattern ) ;
 
 void highPoison( void ) ;
+void highPoisonP( void ) ;
 Searchstate_t highPoisonCreate( void ) ;
+Searchstate_t highPoisonCreateP( void ) ;
 Searchstate_t highPoisonDay( int Day, Bits_t target ) ;
+Searchstate_t highPoisonDayP( int Day, Bits_t * target ) ;
 
 void lowPoison( void ) ;
 Searchstate_t lowPoisonCreate( void ) ;
@@ -211,7 +214,7 @@ int main( int argc, char **argv )
         lowPoison() ;
     } else {
         // Just shows shortest time
-        highPoison() ;
+        highPoisonP() ;
     }
     
     // print json
@@ -664,6 +667,10 @@ void highPoison( void ) {
     highPoisonCreate() ;
 }
 
+void highPoisonP( void ) {
+    highPoisonCreateP() ;
+}
+
 Searchstate_t highPoisonCreate( void ) {
     // Solve Poison >1
     // Set up arrays of game states
@@ -693,6 +700,45 @@ Searchstate_t highPoisonCreate( void ) {
     for ( int Day=1 ; Day < MaxDays ; ++Day ) {
         printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
         switch ( highPoisonDay(Day,Game_none) ) {
+            case won:
+                printf("Victory in %d days!\n",Day ) ; // 0 index
+                return won ;
+            case lost:
+                printf("No solution despite %d days\n",Day );
+                return lost ;
+            default:
+                break ;
+        }
+    }
+    printf( "Exceeded %d days.\n",MaxDays ) ;
+    return lost ;
+}
+
+Searchstate_t highPoisonCreateP( void ) {
+    // Solve Poison >1
+    // Set up arrays of game states
+    //  will evaluate all states for each day for all moves and add to next day if unique
+
+    gameListNext = 0 ;
+    gameListStart = gameListNext ;
+
+    // initially no poison history of course
+	Bits_t move[poison_plus] ;
+	move[0] = Game_all ; // Start full of foxes
+    for ( int p=1 ; p<=poison ; ++p ) {
+        move[p] = 0 ; // no prior moves
+    }
+
+    // set Initial position
+    memmove( gameListP + gameListNext, move, poison_size ) ;
+    gameListNext = INCP( gameListNext ) ;
+    gamesSeenFoundP( move ) ; // flag this configuration
+    ++gameListNext ;
+    
+    // Now loop through days
+    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
+        printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
+        switch ( highPoisonDayP(Day,NULL) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
@@ -755,6 +801,7 @@ Searchstate_t highPoisonDay( int Day, Bits_t target ) {
     }
     return gameListNext != gameListStart ? forward : lost ;
 }
+
 Searchstate_t highPoisonDayP( int Day, Bits_t * target ) {
     Bits_t move[poison_plus+1] ; // for poisoning
 
