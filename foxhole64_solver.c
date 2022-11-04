@@ -31,6 +31,7 @@ struct {
     Bits_t * Possible ;
     Bits_t * Sorted ;
     Bits_t * Unsorted ;
+    Bits_t * Next ;
     size_t iPossible ;
     size_t iSorted ;
     size_t iUnsorted ;
@@ -131,8 +132,12 @@ Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t 
 Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) ;
 
 int compare(const void* numA, const void* numB) ;
+int compareP(const void * pA, const void * pB ) ;
+
 void gamesSeenAdd( Bits_t g ) ;
+void gamesSeenAddP( Bits_t * g ) ;
 Bool_t gamesSeenFound( Bits_t g ) ;
+Bool_t gamesSeenFoundP( Bits_t * g ) ;
 
 void backTraceCreate( void ) ;
 void backTraceAdd( int Day ) ;
@@ -220,6 +225,7 @@ void gamesSeenCreate() {
     Loc.iSorted = 0 ;
     Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
     Loc.iUnsorted = 0 ;
+    Loc.Next = Loc.Unsorted ;
     //Loc.free = STORESIZE - (Loc.Sorted - Loc.Jumps) ;
     //printf("Jump %p, Possible %p, Sort %p, Usort %p\n",Loc.Jumps,Loc.Possible,Loc.Sorted,Loc.Unsorted);
     //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
@@ -240,6 +246,10 @@ int compare(const void* numA, const void* numB) {
     }
 }
 
+int compareP(const void * pA, const void * pB) {
+	return memcmp( pA, pB, poison_size ) ;
+}
+
 void gamesSeenAdd( Bits_t g ) {
     Loc.Unsorted[Loc.iUnsorted] = g ;
     ++Loc.iUnsorted ;
@@ -257,6 +267,24 @@ void gamesSeenAdd( Bits_t g ) {
     }
 }
 
+void gamesSeenAddP( Bits_t * g ) {
+    memmove( Loc.Next, g, poison_size ) ;
+    ++Loc.iUnsorted ;
+    Loc.Next += poison_plus ;
+    if ( Loc.iUnsorted >= UNSORTSIZE ) {
+        Loc.free -= Loc.iUnsorted * poison_plus ;
+        if ( Loc.free <= UNSORTSIZE ) {
+            fprintf(stderr, "Memory exhausted adding games seen\n");
+            exit(1);
+        }
+        //printf("Sorting\n");
+        Loc.iSorted += Loc.iUnsorted ;
+        qsort( Loc.Sorted, Loc.iSorted, sizeof( Bits_t), compare );
+        Loc.Unsorted = Loc.Next ;
+        Loc.iUnsorted = 0 ;
+    }
+}
+
 Bool_t gamesSeenFound( Bits_t g ) {
     if ( bsearch( &g, Loc.Sorted,    Loc.iSorted,   sizeof( Bits_t ), compare ) != NULL ) {
         return True ;
@@ -269,13 +297,13 @@ Bool_t gamesSeenFound( Bits_t g ) {
 }
 
 Bool_t gamesSeenFoundP( Bits_t * g ) {
-    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   poison_size, compare ) != NULL ) {
+    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   poison_size, compareP ) != NULL ) {
         return True ;
     }
-    if (   lfind( g, Loc.Unsorted, &Loc.iUnsorted, poison_size, compare ) != NULL ) {
+    if (   lfind( g, Loc.Unsorted, &Loc.iUnsorted, poison_size, compareP ) != NULL ) {
         return True ;
     }
-    gamesSeenAdd( g ) ;
+    gamesSeenAddP( g ) ;
     return False ;
 }
 
