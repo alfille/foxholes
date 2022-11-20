@@ -18,6 +18,8 @@
 
 typedef uint32_t Bits_t;
 typedef uint64_t Map_t;
+typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
 
 #include "foxholes.h"
 
@@ -72,9 +74,6 @@ int gameListNext ;
 
 // Arrays holding winning moves and game positions
 int victoryDay;  // >=0 for success
-Bits_t victoryGame[MaxDays+1] ;
-Bits_t victoryMove[MaxDays+1] ;
-
 
 // structure holding backtracing info to recreate winning strategy
 // circular buffer of prior game states with references from active buffer and back buffer
@@ -128,6 +127,7 @@ void showDoubleBits( Bits_t bb, Bits_t cc ) ;
 
 void jsonOut( void ) ;
 
+#include "victory.c"
 #include "getOpts.c"
 #include "showBits.c"
 #include "help.c"
@@ -145,12 +145,7 @@ int main( int argc, char **argv )
     // Print final arguments
     printStatus(argv[0]);    
     
-    // Set all bits and saet up pre-computed arrays
-    Game_all = 0;
-    for ( int h=0 ; h<holes ; ++h ) {
-        setB( Game_all, h ) ;
-    }
-    victoryDay = -1;
+    setupVictory() ;
 
     if ( update ) {
         printf("Setting up moves\n");

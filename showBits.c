@@ -33,7 +33,7 @@ void showDoubleBits( Bits_t bb, Bits_t cc ) {
                 }
                 printf("  ##  ");
                 for ( int x=0 ; x<xlength ; ++x ) {
-                    printf( (x<=y) && getB( cc, I(x,y) ) ? "X|":" |" );
+                    printf( (x<=y) && getB( cc, T(x,y) ) ? "X|":" |" );
                 }
                 printf("\n");
             }

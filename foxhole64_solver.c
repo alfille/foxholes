@@ -18,7 +18,9 @@
  * 
  * */
 
-typedef uint64_t Bits_t;
+typedef uint64_t Bits_t; // bitmap for games state, moves
+typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
 
 #include "foxholes.h"
 
@@ -44,7 +46,7 @@ struct {
 // Limits
 #define MaxHoles 64
 #define MaxDays 300
-#define MaxPoison 4
+#define MaxPoison 40
 
 // Bit macros
 // 64 bit for games, moves, jumps
@@ -74,21 +76,27 @@ int gameListNext ;
 // Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
 // All in offset index (Bits_t size)
 
-#define gamestate_lengthP ( gamestate_length * sizeof(struct tryStruct)/sizeof(Bits_t) )
-#define INCP(x) ( ((x)+poison_plus+1) % gamestate_lengthP )
-#define DECP(x) ( ((x)+gamestate_lengthP-poison_plus-1) % gamestate_lengthP )
-#define DIFFP(x,y) ( ( ( gamestate_lengthP+(x)-(y) ) % gamestate_lengthP ) / (poison_plus + 1 ) )
+// Use same array -- add some buffer to accomodate larger element size
+#define RGMoveLength ( ( gamestate_length -MaxPoison )* sizeof(struct tryStruct)/sizeof(Bits_t) )
+#define RGMoveINC(x) ( ((x)+poison_plus+1) % RGMoveLength )
+#define RGMoveDEC(x) ( ((x)+RGMoveLength-poison_plus-1) % RGMoveLength )
+#define RGMoveDIFF(x,y) ( ( ( RGMoveLength+(x)-(y) ) % RGMoveLength ) / (poison_plus + 1 ) )
+#define RGM_size   ( (poison_plus+1) * sizeof(Bits_t) )
 
-Bits_t * gameListP = (Bits_t *) gameList ;
-Bits_t * backTraceListP = (Bits_t *) backTraceList ;
-#define ReferP(x) = (x)
-#define GameP(x) = ((x)+1)
-#define MoveP(x) = ((x)+2)
+#define indexRGMove gameListStart
+#define nextRGMove  gameListNext
 
-// Arrays holding winning moves and game positions
-int victoryDay;  // >=0 for success
-Bits_t victoryGame[MaxDays+1] ;
-Bits_t victoryMove[MaxDays+1] ;
+// poison_plus + 1 elements per entry:
+// 0 - refer
+// 1 - game position
+// 2 - most recent move
+// 3 - next most recent move
+// ...
+// total of poison-1 moves (min 0)
+RGMove_t * RGMoveCurrent = (RGMove_t *) gameList ;
+RGMove_t * RGMoveBack = (RGMove_t *) backTraceList ;
+
+
 
 // structure holding backtracing info to recreate winning strategy
 // circular buffer of prior game states with references from active buffer and back buffer
@@ -96,9 +104,9 @@ Bits_t victoryMove[MaxDays+1] ;
 #define backLook_length (MaxDays+1)
 struct {
     int addDay ; // next day to add to backtrace
-    int increment ; // increment for addDay
-    int start ; // start index for entries list
-    int next ; // next index for entries list
+    int incrementDay ; // incrementDay for addDay
+    int startEntry ; // start index for entries list
+    int nextEntry ; // next index for entries list
     struct {
         int start; // start in backTraceList
         int day; // corresponding day
@@ -123,42 +131,51 @@ void jumpHolesCreate( Bits_t * J ) ;
 size_t binomial( int N, int M ) ;
 int premadeMovesRecurse( Bits_t * Moves, int index, int start_hole, int left, Bits_t pattern ) ;
 
-void highPoison( void ) ;
 void highPoisonP( void ) ;
-Searchstate_t highPoisonCreate( void ) ;
 Searchstate_t highPoisonCreateP( void ) ;
-Searchstate_t highPoisonDay( int Day, Bits_t target ) ;
-Searchstate_t highPoisonDayP( int Day, Bits_t * target ) ;
+Searchstate_t highPoisonDayP( int Day, Bits_t target ) ;
 
 void lowPoison( void ) ;
 Searchstate_t lowPoisonCreate( void ) ;
 Searchstate_t lowPoisonDay( int Day, Bits_t target ) ;
 
 Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
-Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) ;
+Searchstate_t calcMoveP( GMove_t* move, Bits_t target ) ;
 
 int compare(const void* numA, const void* numB) ;
 int compareP(const void * pA, const void * pB ) ;
 
 void gamesSeenAdd( Bits_t g ) ;
-void gamesSeenAddP( Bits_t * g ) ;
 Bool_t gamesSeenFound( Bits_t g ) ;
-Bool_t gamesSeenFoundP( Bits_t * g ) ;
+Bool_t gamesSeenFoundP( GMove_t * g ) ;
 
 void backTraceCreate( void ) ;
 void backTraceAdd( int Day ) ;
+void backTraceAddP( int Day ) ;
 void backTraceRestart( int lastDay, int thisDay ) ;
 void backTraceExecute( int generation, Bits_t refer ) ;
+void backTraceExecuteP( int generation, Bits_t refer ) ;
 
 void fixupTrace( void ) ;
 void fixupMoves( void ) ;
+void fixupMovesP( void ) ;
+void fixupDayP( int Day ) ;
+void fixupGamesP( void ) ;
+
 
 void showBits( Bits_t bb ) ;
 void showDoubleBits( Bits_t bb, Bits_t cc ) ;
+void showWin( void ) ;
+
+void loadToVictory( int Day, GMove_t * move ) ;
+void loadToVictoryPlus( int Day, GMove_t * move ) ;
+void loadFromVictory( int Day, GMove_t * move ) ;
+
+
 
 void jsonOut( void ) ;
 
-
+#include "victory.c"
 #include "getOpts.c"
 #include "showBits.c"
 #include "help.c"
@@ -176,12 +193,7 @@ int main( int argc, char **argv )
     // Print final arguments
     printStatus( argv[0]);    
     
-    // Set all bits and set up pre-computed arrays
-    Game_all = 0 ;
-    for ( int h=0 ; h<holes ; ++h ) {
-        setB( Game_all, h ) ;
-    }
-    victoryDay = -1;
+    setupVictory() ;
 
     if ( update ) {
         printf("Setting up moves\n");
@@ -209,11 +221,14 @@ int main( int argc, char **argv )
     gamesSeenCreate(); // bitmap of game layouts (to avoid revisiting)
 
     // Execute search (different if more than 1 poisoned day)
-    if ( poison < 2 ) {
+    if ( poison < 2 && ! xperimental ) {
         // Does full backtrace to show full winning strategy
         lowPoison() ;
     } else {
-        // Just shows shortest time
+        if (rigorous) {
+            search_elements = poison_plus ;
+            search_size = search_elements * sizeof( Bits_t ) ;
+        }
         highPoisonP() ;
     }
     
@@ -253,7 +268,7 @@ int compare(const void* numA, const void* numB) {
 }
 
 int compareP(const void * pA, const void * pB) {
-	return memcmp( pA, pB, poison_size ) ;
+    return memcmp( pA, pB, search_size ) ;
 }
 
 void gamesSeenAdd( Bits_t g ) {
@@ -273,24 +288,6 @@ void gamesSeenAdd( Bits_t g ) {
     }
 }
 
-void gamesSeenAddP( Bits_t * g ) {
-    memmove( Loc.Next, g, poison_size ) ;
-    ++Loc.iUnsorted ;
-    Loc.Next += poison_plus ;
-    if ( Loc.iUnsorted >= UNSORTSIZE ) {
-        Loc.free -= Loc.iUnsorted * poison_plus ;
-        if ( Loc.free <= UNSORTSIZE ) {
-            fprintf(stderr, "Memory exhausted adding games seen\n");
-            exit(1);
-        }
-        //printf("Sorting\n");
-        Loc.iSorted += Loc.iUnsorted ;
-        qsort( Loc.Sorted, Loc.iSorted, sizeof( Bits_t), compare );
-        Loc.Unsorted = Loc.Next ;
-        Loc.iUnsorted = 0 ;
-    }
-}
-
 Bool_t gamesSeenFound( Bits_t g ) {
     if ( bsearch( &g, Loc.Sorted,    Loc.iSorted,   sizeof( Bits_t ), compare ) != NULL ) {
         return True ;
@@ -302,18 +299,34 @@ Bool_t gamesSeenFound( Bits_t g ) {
     return False ;
 }
 
-Bool_t gamesSeenFoundP( Bits_t * g ) {
-    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   poison_size, compareP ) != NULL ) {
+Bool_t gamesSeenFoundP( GMove_t * g ) {
+    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   search_size, compareP ) != NULL ) {
         return True ;
     }
-    if (   lfind( g, Loc.Unsorted, &Loc.iUnsorted, poison_size, compareP ) != NULL ) {
+    size_t ius = Loc.iUnsorted ;
+    lsearch( g, Loc.Unsorted, &Loc.iUnsorted, search_size, compareP ) ;
+    if ( ius == Loc.iUnsorted ) {
+        // found
         return True ;
     }
-    gamesSeenAddP( g ) ;
+    // added to unsorted. See if need to move unsorted to sorted and check for enough space for next increment
+    Loc.Next += search_elements ;
+    if ( Loc.iUnsorted >= UNSORTSIZE ) { // move unsorted -> sorted
+        Loc.free -= Loc.iUnsorted * search_elements ;
+        if ( Loc.free <= UNSORTSIZE ) { // test if enough space
+            fprintf(stderr, "Memory exhausted adding games seen\n");
+            exit(1);
+        }
+        //printf("Sorting\n");
+        Loc.iSorted += Loc.iUnsorted ;
+        qsort( Loc.Sorted, Loc.iSorted, search_size, compareP );
+        Loc.Unsorted = Loc.Next ;
+        Loc.iUnsorted = 0 ;
+    }
     return False ;
 }
 
-Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) {
+Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, GMove_t *new_game, Bits_t target ) {
     if ( update ) {
         ++searchCount ;
         if ( (searchCount & 0xFFFFFF) == 0 ) {
@@ -352,12 +365,12 @@ Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t 
     return forward ;
 }
 
-Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) {
-	// comming in, move has game,newmove,move0,..move[p-2]
-	// returning move has newgame,newmove,move0,...,move[n-p]
-	// target points to:
-	//   NULL Game_none
-	//   non--NULL, move array (poison_plus length)
+Searchstate_t calcMoveP( GMove_t * gmove, Bits_t target ) {
+    // comming in, move has game,newmove,move0,..move[p-2]
+    // returning move has newgame,newmove,move0,...,move[n-p]
+    // target points to:
+    //   NULL Game_none
+    //   non--NULL, move array (poison_plus length)
     if ( update ) {
         ++searchCount ;
         if ( (searchCount & 0xFFFFFF) == 0 ) {
@@ -366,34 +379,29 @@ Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) {
     }
 
     // clear moves
-    Bits_t thisGame = move[0] ;
-    thisGame &= ~move[1] ;
+    Bits_t thisGame = gmove[0] ;
+    thisGame &= ~gmove[1] ;
 
     // calculate where they jump to
-    move[0] = Game_none ;
+    gmove[0] = Game_none ;
     for ( int j=0 ; j<holes ; ++j ) {
         if ( getB( thisGame, j ) ) { // fox currently
-             move[0] |= Loc.Jumps[j] ; // jumps to here
+             gmove[0] |= Loc.Jumps[j] ; // jumps to here
         }
     }
 
     // do poisoning
     for ( int p=1 ; p<=poison ; ++p ) {
-        move[0] &= ~move[p] ;
+        gmove[0] &= ~gmove[p] ;
     }
     
-    // Victory? (No foxes)
-    if ( target == NULL ) {
-		if ( move[0]==Game_none ) {
-			return won ;
-		}
-	} else {
-		if ( memcmp( move, target, poison_size ) == 0 ) {
-			return won ;
-		}
-	}
+    // Victory? (No foxes or other goal in fixup backtracking mode)
+    if ( gmove[0] == target ) {
+            return won ;
+    }
+
     // Already seen?
-    if ( gamesSeenFoundP( move ) == True ) {
+    if ( gamesSeenFoundP( gmove ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
@@ -403,11 +411,11 @@ Searchstate_t calcMoveP( Bits_t* move, Bits_t * target ) {
 }
 
 void backTraceCreate( void ) {
-    backTraceState.start = 0 ;
-    backTraceState.next = 0 ;
+    backTraceState.startEntry = 0 ;
+    backTraceState.nextEntry = 0 ;
     backTraceState.entries[0].start = 0 ;
     backTraceState.addDay = 1 ;
-    backTraceState.increment = 1 ;
+    backTraceState.incrementDay = poison_plus ;
 }
 
 void backTraceExecute( int generation, Bits_t refer ) {
@@ -415,8 +423,24 @@ void backTraceExecute( int generation, Bits_t refer ) {
     while ( refer != Game_all ) {
         //printf("backtrace generation=%d day=%d refer=%d\n",generation,backTraceState.entries[generation].day,refer) ;
         victoryGame[backTraceState.entries[generation].day] = backTraceList[refer].game ;
+        //showBits( victoryGame[0] ) ;
         refer = backTraceList[refer].refer ;
-        if ( generation == backTraceState.start ) {
+        if ( generation == backTraceState.startEntry ) {
+            break ;
+        }
+        generation = backDEC(generation) ;
+    }
+}
+
+void backTraceExecuteP( int generation, Bits_t refer ) {
+    // generation is index in backTraceState entries list (in turn indexes circular buffer)
+    while ( refer != Game_all ) {
+        int day = backTraceState.entries[generation].day ;
+        loadToVictory( day, RGMoveBack + refer + 1 ) ;
+        refer = RGMoveBack[refer] ;
+        //printf("Backtracing, day %d.\n",day);
+        //showWin();
+        if ( generation == backTraceState.startEntry ) {
             break ;
         }
         generation = backDEC(generation) ;
@@ -428,24 +452,54 @@ void backTraceAdd( int Day ) {
 
     // back room for new data
     int insertLength = DIFF(gameListNext,gameListStart) ;
-    if ( backTraceState.start != backTraceState.next ) {
-        while ( DIFF(backTraceState.entries[backTraceState.start].start,backTraceState.entries[backTraceState.next].start) < insertLength ) {
-            backTraceState.start = backINC(backTraceState.start) ;
-            ++backTraceState.increment ;
+    if ( backTraceState.startEntry != backTraceState.nextEntry ) {
+        while ( DIFF(backTraceState.entries[backTraceState.startEntry].start,backTraceState.entries[backTraceState.nextEntry].start) < insertLength ) {
+            backTraceState.startEntry = backINC(backTraceState.startEntry) ;
+            ++backTraceState.incrementDay ;
         }
     }
 
     // move current state to "Back" array"
-    backTraceState.entries[backTraceState.next].day = Day ;
-    int index = backTraceState.entries[backTraceState.next].start ;
+    backTraceState.entries[backTraceState.nextEntry].day = Day ;
+    int index = backTraceState.entries[backTraceState.nextEntry].start ;
     for ( int inew=gameListStart ; inew != gameListNext ; inew = INC(inew), index=INC(index) ) {
         backTraceList[index].game  = gameList[inew].game ;
         backTraceList[index].refer = gameList[inew].refer ;
         gameList[inew].refer = index ;
     }
-    backTraceState.next = backINC(backTraceState.next) ;
-    backTraceState.entries[backTraceState.next].start = index ;
-    backTraceState.addDay += backTraceState.increment ;
+    backTraceState.nextEntry = backINC(backTraceState.nextEntry) ;
+    backTraceState.entries[backTraceState.nextEntry].start = index ;
+    backTraceState.addDay += backTraceState.incrementDay ;
+}
+
+void backTraceAddP( int Day ) {
+    // poison > 1
+
+    // back room for new data
+    size_t rgm_insert = RGMoveDIFF(nextRGMove,indexRGMove) ; // length of refer/game/move data to add
+    //printf("Backtrace add day %d\n",Day);
+    if ( backTraceState.startEntry != backTraceState.nextEntry ) {
+        while ( RGMoveDIFF(
+                    backTraceState.entries[backTraceState.startEntry].start,
+                    backTraceState.entries[backTraceState.nextEntry].start
+                    ) < rgm_insert ) {
+            //printf("Backtrace add day %d makeroom\n",Day);
+            // loop through making space by removing old backtrace data
+            backTraceState.startEntry = backINC(backTraceState.startEntry) ;
+            ++backTraceState.incrementDay ;
+        }
+    }
+
+    // move current state to "Back" array"
+    backTraceState.entries[backTraceState.nextEntry].day = Day ;
+    int iback = backTraceState.entries[backTraceState.nextEntry].start ;
+    for ( int igame=indexRGMove ; igame != nextRGMove ; igame = RGMoveINC(igame), iback=RGMoveINC(iback) ) {
+        memmove( RGMoveBack + iback, RGMoveCurrent + igame, RGM_size ) ;
+        RGMoveCurrent[igame] = iback ; // update refer
+    }
+    backTraceState.nextEntry = backINC(backTraceState.nextEntry) ;
+    backTraceState.entries[backTraceState.nextEntry].start = iback ;
+    backTraceState.addDay += backTraceState.incrementDay ;
 }
 
 void backTraceRestart( int lastDay, int thisDay ) {
@@ -486,6 +540,49 @@ void backTraceRestart( int lastDay, int thisDay ) {
     
 }
 
+void backTraceRestartP( int lastDay, int thisDay ) {
+    // Poison > 1
+    // Set up arrays of game states
+    //  will evaluate all states for each day for all moves and add to next day if unique
+
+    RGMove_t move[ poison_plus + 1 ] ;
+    Bits_t target = victoryGame[thisDay] ;
+
+    nextRGMove = 0 ;
+    indexRGMove = nextRGMove ;
+    
+    // set solver state
+    backTraceCreate() ;
+    backTraceState.addDay = lastDay+1 ;
+
+    // set Initial position
+    loadFromVictory( lastDay, move+1 ) ;
+    move[0] = Game_all ; // refer
+    printf( "Days %d -> %d", lastDay, thisDay ) ;
+    for (int i = 0 ; i <= poison_plus ; ++i ) { printf("%d=>%lu  ",i,move[i]) ; }
+    printf("\n");
+    // set Initial position
+    memmove( RGMoveCurrent + nextRGMove, move, RGM_size ) ;
+    gamesSeenFoundP( move+1 ) ; // flag this configuration
+    nextRGMove = RGMoveINC( nextRGMove ) ;
+    
+    // Now loop through days
+    for ( int Day=lastDay+1 ; Day<=thisDay ; ++Day ) {
+        switch ( highPoisonDayP( Day, target ) ) {
+            case won:
+            case lost:
+                return ;
+            default:
+                break ;
+        }
+        // Save intermediate for backtracing winning strategy
+        if ( Day == backTraceState.addDay ) {
+            backTraceAddP(Day) ;
+        }
+    }
+    
+}
+
 void fixupTrace( void ) {
     // any unsolved?
     int unsolved ;
@@ -507,19 +604,25 @@ void fixupTrace( void ) {
                 // known solution
                 if ( gap ) {
                     // solution after unknown gap
-                    printf("Go back to day %d for intermediate position\n",d);
-                    backTraceRestart( lastDay, d );
+                    //printf("Go back to day %d for intermediate position\n",d);
+                    //showWin();
+                    if ( poison > 1 ) {
+                        backTraceRestartP( lastDay, d );
+                    } else {
+                        backTraceRestart( lastDay, d );
+                    }
                 } ;
 
                 gap = False ;
                 lastDay = d ;
             }
         }
-    } while ( unsolved ) ;
+//    } while ( unsolved ) ;
+    } while ( False ) ;
 }
 
 void fixupMoves( void ) {
-    Bits_t move[1] ; // at most one poison day
+    GMove_t move[1] ; // at most one poison day
     
     for ( int Day=1 ; Day < victoryDay ; ++Day ) {
         // solve unknown moves
@@ -557,6 +660,57 @@ void fixupMoves( void ) {
     }
 }
 
+void fixupDayP( int Day ) {
+    GMove_t move[poison_plus+1] ;
+    loadFromVictory( Day-1, move+1 ) ;
+    for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+        move[0] = victoryGame[ Day-1 ] ;
+        move[1] = Loc.Possible[ip] ; // actual move (and poisoning)
+
+        switch ( calcMoveP( move, victoryGame[Day] ) ) {
+            case won:
+                loadToVictoryPlus( Day, move ) ;
+                return ;
+            default:
+                break ;
+        }
+    }
+    printf("Uh oh -- cannot find move for day = %d\n",Day) ;
+}
+            
+
+void fixupMovesP( void ) {
+    for ( int Day=1 ; Day < victoryDay ; ++Day ) {
+        // solve unknown moves
+        if ( victoryMove[Day] == Game_none ) {
+            if ( update ) {
+                //printf("Fixup Moves Day %d\n",Day);
+                //showWin();
+            }
+            fixupDayP( Day ) ;
+        }
+    }
+}
+
+void fixupGamesP( void ) {
+    // Use moves to fill in games
+    GMove_t gmove[ poison_plus+1 ] ; // initial state
+    loadFromVictory( 0, gmove ) ;
+    for ( int Day = 1 ; Day < victoryDay ; ++Day ) {
+        memmove( gmove+1, gmove, poison_plus ) ; // move state to prior
+        gmove[1] = victoryMove[Day] ; // add newest move
+        calcMoveP( gmove, Game_none ) ; // calculate game
+        loadToVictory( Day, gmove ) ;
+    }
+}
+
+void showWin( void ) {
+    for ( int d = 0 ; d <= victoryDay ; ++d ) {
+        printf("Day%3d Move ## Game \n",d);
+        showDoubleBits( victoryMove[d],victoryGame[d] ) ;
+    }
+}    
+
 void lowPoison( void ) {
     // only for poison <= 1    
     switch (lowPoisonCreate()) { // start searching through days until a solution is found (will be fastest by definition)
@@ -565,10 +719,7 @@ void lowPoison( void ) {
         fixupMoves() ; // fill in moves
         printf("\n");
         printf("Winning Strategy:\n");
-        for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-            printf("Day%3d Move ## Game \n",d);
-            showDoubleBits( victoryMove[d],victoryGame[d] ) ;
-        }
+        showWin() ;
         break ;
     default:
         break ;    
@@ -589,7 +740,7 @@ Searchstate_t lowPoisonCreate( void ) {
         victoryMove[d] = Game_none ;
     }
     
-    // set solver state
+    // set back-solver state
     backTraceCreate() ;
         
     // set Initial position
@@ -600,7 +751,7 @@ Searchstate_t lowPoisonCreate( void ) {
     
     // Now loop through days
     for ( int Day=1 ; Day < MaxDays ; ++Day ) {
-        printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
+        printf("Day %d, States: %d, Moves %lu, Total %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible,Loc.iSorted+Loc.iUnsorted);
         switch ( lowPoisonDay(Day,Game_none) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
@@ -623,10 +774,12 @@ Searchstate_t lowPoisonCreate( void ) {
 Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
     // poison <= 1
     
-    Bits_t move[1] ; // for poisoning
+    GMove_t move[1] ; // for poisoning
 
     int iold = gameListStart ; // need to define before loop
     gameListStart = gameListNext ;
+    //printf("Monitor day %d\n",Day);
+    //showBits( victoryGame[0] ) ;
 
     for (  ; iold!=gameListStart ; iold=INC(iold) ) { // each possible position
         for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
@@ -642,7 +795,7 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
                         // real end of game
                         victoryDay = Day ;
                     }
-                    backTraceExecute( backDEC(backTraceState.next), gameList[iold].refer ) ;
+                    backTraceExecute( backDEC(backTraceState.nextEntry), gameList[iold].refer ) ;
                     return won;
                 case forward:
                     // Add this game state to the furture evaluation list
@@ -663,55 +816,19 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) {
 }
 
 
-void highPoison( void ) {
-    highPoisonCreate() ;
-}
-
 void highPoisonP( void ) {
-    highPoisonCreateP() ;
-}
-
-Searchstate_t highPoisonCreate( void ) {
-    // Solve Poison >1
-    // Set up arrays of game states
-    //  will evaluate all states for each day for all moves and add to next day if unique
-
-    gameListNext = 0 ;
-    gameListStart = gameListNext ;
-    
-    typedef struct {
-        Bits_t move[poison-1] ; 
-    } Pstruct ;
-    pGL = malloc( gamestate_length * sizeof(Pstruct) ) ;
-    Pstruct * gameListPoison = pGL ;
-
-    // initially no poison history of course
-    for ( int p=1 ; p<poison ; ++p ) {
-        gameListPoison[gameListStart].move[p-1] = 0 ; // no prior moves
+    switch (highPoisonCreateP()) { // start searching through days until a solution is found (will be fastest by definition)
+    case won:
+        fixupTrace() ; // fill in game path
+        fixupMovesP() ; // fill in missing moves
+        //fixupGamesP() ; // fill in missing games
+        printf("\n");
+        printf("Winning Strategy:\n");
+        showWin() ;
+        break ;
+    default:
+        break ;    
     }
-
-    // set Initial position
-    gameList[gameListNext].game = Game_all ;
-    gamesSeenFound( gameList[gameListNext].game ) ; // flag this configuration
-    ++gameListNext ;
-    
-
-    // Now loop through days
-    for ( int Day=1 ; Day < MaxDays ; ++Day ) {
-        printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
-        switch ( highPoisonDay(Day,Game_none) ) {
-            case won:
-                printf("Victory in %d days!\n",Day ) ; // 0 index
-                return won ;
-            case lost:
-                printf("No solution despite %d days\n",Day );
-                return lost ;
-            default:
-                break ;
-        }
-    }
-    printf( "Exceeded %d days.\n",MaxDays ) ;
-    return lost ;
 }
 
 Searchstate_t highPoisonCreateP( void ) {
@@ -719,26 +836,26 @@ Searchstate_t highPoisonCreateP( void ) {
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
-    gameListNext = 0 ;
-    gameListStart = gameListNext ;
+    nextRGMove = 0 ;
+    indexRGMove = nextRGMove ;
+
+    // set back-solver state
+    backTraceCreate() ;
 
     // initially no poison history of course
-	Bits_t move[poison_plus] ;
-	move[0] = Game_all ; // Start full of foxes
-    for ( int p=1 ; p<=poison ; ++p ) {
-        move[p] = 0 ; // no prior moves
-    }
+    RGMove_t rgmove[poison_plus+1] ;
+    rgmove[0] = Game_all ; // refer
+    loadFromVictory( 0, rgmove+1 ) ;
 
     // set Initial position
-    memmove( gameListP + gameListNext, move, poison_size ) ;
-    gameListNext = INCP( gameListNext ) ;
-    gamesSeenFoundP( move ) ; // flag this configuration
-    ++gameListNext ;
+    memmove( RGMoveCurrent + nextRGMove, rgmove, RGM_size ) ;
+    nextRGMove = RGMoveINC( nextRGMove ) ;
+    gamesSeenFoundP( rgmove+1 ) ; // flag this configuration
     
     // Now loop through days
     for ( int Day=1 ; Day < MaxDays ; ++Day ) {
-        printf("Day %d, States: %d, Moves %lu\n",Day+1,DIFF(gameListNext,gameListStart),Loc.iPossible);
-        switch ( highPoisonDayP(Day,NULL) ) {
+        printf("Day %d, States: %lu, Moves %lu, Total %lu\n",Day,RGMoveDIFF(nextRGMove,indexRGMove),Loc.iPossible,Loc.iSorted+Loc.iUnsorted);
+        switch ( highPoisonDayP( Day, Game_none ) ) {
             case won:
                 printf("Victory in %d days!\n",Day ) ; // 0 index
                 return won ;
@@ -748,99 +865,88 @@ Searchstate_t highPoisonCreateP( void ) {
             default:
                 break ;
         }
+        // Save intermediate for backtracing winning strategy
+        if ( Day == backTraceState.addDay ) {
+            backTraceAddP(Day) ;
+        }
     }
     printf( "Exceeded %d days.\n",MaxDays ) ;
     return lost ;
 }
 
-Searchstate_t highPoisonDay( int Day, Bits_t target ) {
-    typedef struct {
-        Bits_t move[poison-1] ; 
-    } Pstruct ;
-    Pstruct * gameListPoison = pGL ;
-    
-    Bits_t move[MaxPoison] ; // for poisoning
+Searchstate_t highPoisonDayP( int Day, Bits_t target ) {
+    RGMove_t rgmove[poison_plus+1] ; // for poisoning
 
-    int iold = gameListStart ; // need to define before loop
-    gameListStart = gameListNext ;
+    int iold = indexRGMove ; // need to define before loop
+    indexRGMove = nextRGMove ;
         
-    for (  ; iold!=gameListStart ; iold=INC(iold) ) { // each possible position
-        for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-            Bits_t newT ;
-            move[0] = Loc.Possible[ip] ; // actual move (and poisoning)
-            for ( int p=1 ; p<poison ; ++p ) {
-                move[p] = gameListPoison[iold].move[p-1] ;
+    for (  ; iold!=indexRGMove ; iold=RGMoveINC(iold) ) { // each possible position
+        memmove( rgmove, RGMoveCurrent+iold, RGM_size ) ; // leave space at start
+        Bits_t thisGame = rgmove[1] ;
+        
+        if ( victoryMove[Day] == Game_none ) { // no move specified
+            // Search though all moves
+            for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+                rgmove[0] = thisGame ; // overwrites refer, essentially adds to start of movelist 
+                rgmove[1]= Loc.Possible[ip] ; // actual move (and poisoning)
+                switch( calcMoveP( rgmove, target ) ) {
+                    case won:
+                        victoryGame[Day-1] = thisGame ;
+                        loadToVictoryPlus( Day, rgmove ) ;
+                        if ( target == Game_none ) {
+                            // real end of game
+                            victoryDay = Day ;
+                        }
+                        printf("Victory Day %d\n",Day);
+                        //showWin() ;
+                        // Go through backtraces and fill in solutions found
+                        backTraceExecuteP( backDEC(backTraceState.nextEntry), RGMoveCurrent[iold] ) ;
+                        return won;
+                    case forward:
+                        // Add this game state to the furture evaluation list
+                        RGMoveCurrent[nextRGMove] = RGMoveCurrent[iold] ; // refer
+                        memmove( RGMoveCurrent + nextRGMove +1 , rgmove, poison_size ) ; // rest of gmove
+                        nextRGMove = RGMoveINC( nextRGMove ) ;
+                        if ( nextRGMove == iold ) { // head touches tail
+                            printf("Too large a solution space\n");
+                            return lost ;
+                        }
+                        break ;
+                    default:
+                        // next possible move
+                        break ;
+                }
             }
-                    
-            switch( calcMove( move, gameList[iold].game, &newT, target ) ) {
+        } else {
+            // known move
+            rgmove[0] = thisGame ; // again shifting entries to make soon for newer move
+            rgmove[1]= victoryMove[Day] ; // actual move (and poisoning)
+            switch( calcMoveP( rgmove, target ) ) {
                 case won:
-                    victoryGame[Day] = target ;
-                    victoryMove[Day] = move[0] ;
-                    victoryGame[Day-1] = gameList[iold].game ;
+                    victoryGame[Day-1] = thisGame ;
+                    loadToVictoryPlus( Day, rgmove ) ;
                     if ( target == Game_none ) {
                         // real end of game
                         victoryDay = Day ;
                     }
+                    // Go through backtraces and fill in solutions found
+                    backTraceExecuteP( backDEC(backTraceState.nextEntry), RGMoveCurrent[iold] ) ;
                     return won;
                 case forward:
-                    // Add this game state to the furture evaluation list
-                    gameList[gameListNext].game = newT ;
-                    for ( int p=poison-1 ; p>0 ; --p ) {
-                        gameListPoison[gameListNext].move[p] = move[p-1] ;
-                    }
-                    gameListNext = INC(gameListNext) ;
-                    if ( gameListNext == iold ) { // head touches tail
+                    // Add this game state to the future evaluation list
+                    RGMoveCurrent[nextRGMove] = RGMoveCurrent[iold] ; // refer
+                    memmove( RGMoveCurrent + nextRGMove + 1, rgmove, poison_size ) ;
+                    nextRGMove = RGMoveINC( nextRGMove ) ;
+                    if ( nextRGMove == iold ) { // head touches tail
                         printf("Too large a solution space\n");
                         return lost ;
                     }
                     break ;
                 default:
+                    // next possible move
                     break ;
             }
         }
     }
-    return gameListNext != gameListStart ? forward : lost ;
-}
-
-Searchstate_t highPoisonDayP( int Day, Bits_t * target ) {
-    Bits_t move[poison_plus+1] ; // for poisoning
-
-    int iold = gameListStart ; // need to define before loop
-    gameListStart = gameListNext ;
-        
-    for (  ; iold!=gameListStart ; iold=INCP(iold) ) { // each possible position
-		memmove( move+1, gameListP+iold, poison_size ) ; // leave space at start
-		Bits_t thisGame = move[1] ;
-        for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-            move[0] = thisGame ;
-            move[1]= Loc.Possible[ip] ; // actual move (and poisoning)
-            switch( calcMoveP( move, target ) ) {
-                case won:
-                    victoryGame[Day] = move[0] ;
-                    victoryMove[Day] = move[0] ;
-                    victoryGame[Day-1] = thisGame ;
-                    for ( int p=0 ; p<=poison ; ++p ) {
-						victoryMove[ Day-p ] = move[p+1] ;
-					}
-                    if ( target == NULL ) {
-                        // real end of game
-                        victoryDay = Day ;
-                    }
-                    return won;
-                case forward:
-                    // Add this game state to the furture evaluation list
-                    memmove( gameListP + gameListNext, move, poison_size ) ;
-                    gameListNext = INCP(gameListNext) ;
-                    if ( gameListNext == iold ) { // head touches tail
-                        printf("Too large a solution space\n");
-                        return lost ;
-                    }
-                    break ;
-                default:
-					// next possible move
-                    break ;
-            }
-        }
-    }
-    return gameListNext != gameListStart ? forward : lost ;
+    return nextRGMove != indexRGMove ? forward : lost ;
 }

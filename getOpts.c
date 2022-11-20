@@ -7,7 +7,7 @@ void getOpts( int argc, char ** argv ) {
     // Parse Arguments
     int c ;
     opterr = 0 ; // suppress option error display (to allow optional arguments)
-    while ( (c = getopt( argc, argv, "468cCtTgGuUhHl:L:w:W:p:P:v:V:j:J:" )) != -1 ) {
+    while ( (c = getopt( argc, argv, "468cCtTgGuUhHrRl:L:w:W:p:P:v:V:j:J:xX" )) != -1 ) {
         switch ( c ) {
         case 'h':
             help(argv[0]) ;
@@ -26,6 +26,10 @@ void getOpts( int argc, char ** argv ) {
         case 'P':
         // poison days
             poison = atoi(optarg);
+            break ;
+        case 'r':
+        case 'R':
+            rigorous = True ;
             break ;
         case 'v':
         case 'V':
@@ -55,6 +59,10 @@ void getOpts( int argc, char ** argv ) {
         case 'u':
         case 'U':
             update = True ;
+            break ;
+        case 'x':
+        case 'X':
+            xperimental = True;
             break ;
         case 'j':
         case 'J':

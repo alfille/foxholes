@@ -26,10 +26,14 @@ Geometry_t geo = Circle ;
 int searchCount = 0 ;
 Bool_t json = False ;
 Bool_t jsonfile = False ;
+Bool_t rigorous = False ; // deep state -- poison paths are distinct
+Bool_t xperimental = False ; // for testing -- may not do anything
 FILE * jfile ;
 
 int poison_plus ; // max( 1, poison )
 int poison_size ; // poison_plus bytes
+int search_elements = 1 ; // what defines "state" -- only different for "rigorous"
+int search_size = sizeof( Bits_t ) ; // search_elements * sizeof( Bits_t )
 
 typedef enum {
     Val_ok,
@@ -45,7 +49,7 @@ typedef enum {
 // index from x,y but wrap x if past end (circle)
 #define W(xx,yy) ( I( ((xx)+xlength)%xlength, (yy) ) )
 // Index into Triangle
-#define T(xx,yy) ( (yy)*((yy)+1)/2+(xx) )
+#define T(xx,yy) ( ((yy)*((yy)+1))/2+(xx) )
 
 // For recursion
 typedef enum {

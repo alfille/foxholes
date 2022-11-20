@@ -11,7 +11,7 @@ void help( char * progname ) {
     printf("By Paul H Alfille 2022 -- MIT license\n") ;
     printf("\n") ;
     printf("\t-l 5\tlength (3 to 32 default 5)\n") ;
-    printf("\t-w 1\twidth (1 to 10 but max holes 32)") ;
+    printf("\t-w 1\twidth (1 to 10 but max holes 32)\n") ;
     printf("\n") ;
     printf("\t-c\tfoxholes in a Circle\n") ;
     printf("\t-g\tfoxholes in a Grid\n") ;
@@ -22,10 +22,11 @@ void help( char * progname ) {
     printf("\t-8\tfoxholes connected Octagonally\n") ;
     printf("\n") ;
     printf("\t-v 1\tholes Visited per day\n") ;
-    printf("\t-p 0\tdays visited holes are Poisoned") ;
+    printf("\t-p 0\tdays visited holes are Poisoned\n") ;
+    printf("\t-r \tRigorous poison state memory\n") ;
     printf("\n") ;
     printf("\t-j \t JSONrepresentation of game and solution\n") ;
-    printf("\t-j filename \twrite JSON to file") ;
+    printf("\t-j filename \twrite JSON to file\n") ;
     printf("\n") ;
     printf("\t-u\tperiodic Updates\n") ;
     printf("\t-h\thelp\n") ;

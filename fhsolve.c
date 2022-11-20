@@ -17,6 +17,8 @@
  * */
 
 typedef uint64_t Bits_t;
+typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
 
 #include "foxholes.h"
 
@@ -50,13 +52,6 @@ struct {
 #define clearB( map, b ) map &= ~(long1 << (b))
 #define getB( map, b ) (((map) & (long1 << (b))) ? 1:0)
 
-// Arrays holding winning moves and game positions
-int victoryDay = -1 ;
-
-Bits_t victoryGame[MaxDays+1];
-Bits_t victoryMovePlus[MaxPoison+MaxDays+1];
-Bits_t * victoryMove = victoryMovePlus + MaxPoison ; // allows prior space for poisons
-
 // function prototypes
 int main( int argc, char **argv ) ;
 void getOpts( int argc, char ** argv ) ;
@@ -86,6 +81,7 @@ void showDoubleBits( Bits_t bb, Bits_t cc ) ;
 
 void jsonOut( void ) ;
 
+#include "victory.c"
 #include "getOpts.c"
 #include "showBits.c"
 #include "help.c"
@@ -102,13 +98,8 @@ int main( int argc, char **argv )
     
     // Print final arguments
     printStatus(argv[0]);    
-    
-    // Set all bits and set up pre-computed arrays
-    Game_all = 0 ;
-    for ( int h=0 ; h<holes ; ++h ) {
-        setB( Game_all, h ) ;
-    }
 
+    setupVictory() ;
     if ( update ) {
         printf("Setting up moves\n");
     }
