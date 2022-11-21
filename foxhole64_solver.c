@@ -56,7 +56,7 @@ struct {
 #define getB( map, b ) (((map) & (long1 << (b))) ? 1:0)
 
 // Array of moves to be tested (or saved for backtrace -- circular buffer with macros)
-#define gamestate_length 0x100000
+#define gamestate_length 0x1000000
 #define INC(x) ( ((x)+1) % gamestate_length )
 #define DEC(x) ( ((x)+gamestate_length-1) % gamestate_length )
 #define DIFF(x,y) ( ( gamestate_length+(x)-(y) ) % gamestate_length )
@@ -142,9 +142,6 @@ Searchstate_t lowPoisonDay( int Day, Bits_t target ) ;
 Searchstate_t calcMove( Bits_t* move, Bits_t thisGame, Bits_t *new_game, Bits_t target ) ;
 Searchstate_t calcMoveP( GMove_t* move, Bits_t target ) ;
 
-int compare(const void* numA, const void* numB) ;
-int compareP(const void * pA, const void * pB ) ;
-
 void gamesSeenAdd( Bits_t g ) ;
 Bool_t gamesSeenFound( Bits_t g ) ;
 Bool_t gamesSeenFoundP( GMove_t * g ) ;
@@ -171,8 +168,6 @@ void loadToVictory( int Day, GMove_t * move ) ;
 void loadToVictoryPlus( int Day, GMove_t * move ) ;
 void loadFromVictory( int Day, GMove_t * move ) ;
 
-
-
 void jsonOut( void ) ;
 
 #include "victory.c"
@@ -184,6 +179,7 @@ void jsonOut( void ) ;
 #include "jsonOut.c"
 #include "status.c"
 #include "moves.c"
+#include "compare.c"
 
 int main( int argc, char **argv )
 {
@@ -220,15 +216,40 @@ int main( int argc, char **argv )
     }
     gamesSeenCreate(); // bitmap of game layouts (to avoid revisiting)
 
+    if (rigorous) {
+        search_elements = poison_plus ;
+        search_size = search_elements * sizeof( Bits_t ) ;
+    }
+
+    switch ( search_elements ) {
+        case 1:
+            compare = compare1 ;
+            break ;
+        case 2:
+            compare = compare2 ;
+            break ;
+        case 3:
+            compare = compare3 ;
+            break ;
+        case 4:
+            compare = compare4 ;
+            break ;
+        case 5:
+            compare = compare4 ;
+            break ;
+        case 6:
+            compare = compare4 ;
+            break ;
+        default:
+            compare = compareP ;
+            break ;
+    }
+
     // Execute search (different if more than 1 poisoned day)
     if ( poison < 2 && ! xperimental ) {
         // Does full backtrace to show full winning strategy
         lowPoison() ;
     } else {
-        if (rigorous) {
-            search_elements = poison_plus ;
-            search_size = search_elements * sizeof( Bits_t ) ;
-        }
         highPoisonP() ;
     }
     
@@ -250,25 +271,6 @@ void gamesSeenCreate() {
     //Loc.free = STORESIZE - (Loc.Sorted - Loc.Jumps) ;
     //printf("Jump %p, Possible %p, Sort %p, Usort %p\n",Loc.Jumps,Loc.Possible,Loc.Sorted,Loc.Unsorted);
     //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
-}
-
-int compare(const void* numA, const void* numB) {
-    const Bits_t num1 = *(const Bits_t*)numA;
-    const Bits_t num2 = *(const Bits_t*)numB;
-
-    if (num1 > num2) {
-        return 1;
-    }
-    else {
-        if (num1 == num2)
-            return 0;
-        else
-            return -1;
-    }
-}
-
-int compareP(const void * pA, const void * pB) {
-    return memcmp( pA, pB, search_size ) ;
 }
 
 void gamesSeenAdd( Bits_t g ) {
@@ -300,11 +302,11 @@ Bool_t gamesSeenFound( Bits_t g ) {
 }
 
 Bool_t gamesSeenFoundP( GMove_t * g ) {
-    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   search_size, compareP ) != NULL ) {
+    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   search_size, compare ) != NULL ) {
         return True ;
     }
     size_t ius = Loc.iUnsorted ;
-    lsearch( g, Loc.Unsorted, &Loc.iUnsorted, search_size, compareP ) ;
+    lsearch( g, Loc.Unsorted, &Loc.iUnsorted, search_size, compare ) ;
     if ( ius == Loc.iUnsorted ) {
         // found
         return True ;
@@ -319,7 +321,7 @@ Bool_t gamesSeenFoundP( GMove_t * g ) {
         }
         //printf("Sorting\n");
         Loc.iSorted += Loc.iUnsorted ;
-        qsort( Loc.Sorted, Loc.iSorted, search_size, compareP );
+        qsort( Loc.Sorted, Loc.iSorted, search_size, compare );
         Loc.Unsorted = Loc.Next ;
         Loc.iUnsorted = 0 ;
     }
