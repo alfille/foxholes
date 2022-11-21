@@ -40,5 +40,7 @@ void printStatus( char * progname ) {
     printf("%d holes visited per day\n",visits);
     printf("\tHoles poisoned for %d days\n",poison);
     printf("\n");
+    printf("\tRigorous poison states? %s\n",rigorous?"yes":"no");
+    printf("\n");
 }
 
