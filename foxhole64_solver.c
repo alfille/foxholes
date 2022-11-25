@@ -305,6 +305,9 @@ Searchstate_t calcMove( GMove_t * gmove, Bits_t target ) {
     // clear moves
     Bits_t thisGame = gmove[0] ;
     thisGame &= ~gmove[1] ;
+    showBits( thisGame ) ;
+    for (int m=1 ; m<=poison_plus ; ++m ) printf("%lu ",gmove[m]) ;
+    printf("\n");
 
     // calculate where they jump to
     gmove[0] = Game_none ;
@@ -406,7 +409,7 @@ void backTraceRestart( int lastDay, int thisDay ) {
     loadFromVictory( lastDay, move+1 ) ;
     move[0] = Game_all ; // refer
     //printf( "Days %d -> %d", lastDay, thisDay ) ;
-    for (int i = 0 ; i <= poison_plus ; ++i ) { printf("%d=>%lu  ",i,move[i]) ; }
+    //for (int i = 0 ; i <= poison_plus ; ++i ) { printf("%d=>%lu  ",i,move[i]) ; }
     printf("\n");
     // set Initial position
     memmove( RGMoveCurrent + nextRGMove, move, RGM_size ) ;
