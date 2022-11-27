@@ -19,8 +19,9 @@
  * */
 
 typedef uint64_t Bits_t; // bitmap for games state, moves
-typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
-typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t RGM_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GM_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t GMM_t; // game, move0, .. move[poison] == poison_plus+1 length
 
 #include "foxholes.h"
 
@@ -79,8 +80,8 @@ size_t nextRGMove ;
 // 3 - next most recent move
 // ...
 // total of poison-1 moves (min 0)
-RGMove_t RGMoveCurrent[gamestate_length] ;
-RGMove_t RGMoveBack[gamestate_length] ;
+RGM_t RGMoveCurrent[gamestate_length] ;
+RGM_t RGMoveBack[gamestate_length] ;
 
 
 
@@ -111,7 +112,7 @@ char * connName( Connection_t c ) ;
 void printStatus( char * progname ) ;
 Validation_t validate( void ) ;
 
-void gamesSeenCreate() ;
+void makeStoredState() ;
 void jumpHolesCreate( Bits_t * J ) ;
 
 size_t binomial( int N, int M ) ;
@@ -121,10 +122,9 @@ void primarySolve( void ) ;
 Searchstate_t primarySolveCreate( void ) ;
 Searchstate_t primarySolveDay( int Day, Bits_t target ) ;
 
-Searchstate_t calcMove( GMove_t* move, Bits_t target ) ;
+Searchstate_t calcMove( GMM_t* move, Bits_t target ) ;
 
-void gamesSeenAdd( Bits_t g ) ;
-Bool_t gamesSeenFound( GMove_t * g ) ;
+Bool_t findStoredStates( GM_t * g ) ;
 
 void backTraceCreate( void ) ;
 void backTraceAdd( int Day ) ;
@@ -141,9 +141,9 @@ void showBits( Bits_t bb ) ;
 void showDoubleBits( Bits_t bb, Bits_t cc ) ;
 void showWin( void ) ;
 
-void loadToVictory( int Day, GMove_t * move ) ;
-void loadToVictoryPlus( int Day, GMove_t * move ) ;
-void loadFromVictory( int Day, GMove_t * move ) ;
+void loadToVictory( int Day, GM_t * move ) ;
+void loadToVictoryPlus( int Day, GMM_t * move ) ;
+void loadFromVictory( int Day, GM_t * move ) ;
 
 void jsonOut( void ) ;
 
@@ -191,7 +191,7 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Setting up game array\n");
     }
-    gamesSeenCreate(); // bitmap of game layouts (to avoid revisiting)
+    makeStoredState(); // bitmap of game layouts (to avoid revisiting)
 
     if (rigorous) {
         search_elements = poison_plus ;
@@ -234,8 +234,11 @@ int main( int argc, char **argv )
     }
 }
 
-void gamesSeenCreate() {
+void makeStoredState() {
     // Loc.Sorted already set in premadeMovesCreate
+    // Basically there is a list of stored states ( game positions possibly including poisoned path )
+    // The list is sorted except the tail end that has unsorted for a linear search
+    // every so often, the unsorted is sorted back into sorted.
     Loc.iSorted = 0 ;
     Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
     Loc.iUnsorted = 0 ;
@@ -245,38 +248,32 @@ void gamesSeenCreate() {
     //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
 }
 
-void gamesSeenAdd( Bits_t g ) {
-    Loc.Unsorted[Loc.iUnsorted] = g ;
-    ++Loc.iUnsorted ;
-    if ( Loc.iUnsorted >= UNSORTSIZE ) {
-        Loc.free -= Loc.iUnsorted ;
-        if ( Loc.free <= UNSORTSIZE ) {
-            fprintf(stderr, "Memory exhausted adding games seen\n");
-            exit(1);
-        }
-        //printf("Sorting\n");
-        Loc.iSorted += Loc.iUnsorted ;
-        qsort( Loc.Sorted, Loc.iSorted, sizeof( Bits_t), compare );
-        Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
-        Loc.iUnsorted = 0 ;
-    }
-}
+Bool_t findStoredStates( GM_t * g ) {
+    // actually tries to find --> returns True
+    // or adds to unsorted --> returns False
+    // might re-sort if threshold met
+    // aborts if no space
 
-Bool_t gamesSeenFound( GMove_t * g ) {
+    // fast binary search in sorted
     if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   search_size, compare ) != NULL ) {
         return True ;
     }
+
+    // liner search in unsorted -- will add so need to keep track of size to see that
     size_t ius = Loc.iUnsorted ;
     lsearch( g, Loc.Unsorted, &Loc.iUnsorted, search_size, compare ) ;
     if ( ius == Loc.iUnsorted ) {
         // found
         return True ;
     }
-    // added to unsorted. See if need to move unsorted to sorted and check for enough space for next increment
+    
+    // added to unsorted, move counter. iUnsorted (the count) already incremented
     Loc.Next += search_elements ;
+    
+    // See if need to move unsorted to sorted and check for enough space for next increment
     if ( Loc.iUnsorted >= UNSORTSIZE ) { // move unsorted -> sorted
         Loc.free -= Loc.iUnsorted * search_elements ;
-        if ( Loc.free <= UNSORTSIZE ) { // test if enough space
+        if ( Loc.free <= (size_t) (UNSORTSIZE * search_elements) ) { // test if enough space
             fprintf(stderr, "Memory exhausted adding games seen\n");
             exit(1);
         }
@@ -289,8 +286,8 @@ Bool_t gamesSeenFound( GMove_t * g ) {
     return False ;
 }
 
-Searchstate_t calcMove( GMove_t * gmove, Bits_t target ) {
-    // comming in, move has game,newmove,move0,..move[p-2]
+Searchstate_t calcMove( GMM_t * gmove, Bits_t target ) {
+    // coming in, move has game,newmove,move0,..move[p-2]
     // returning move has newgame,newmove,move0,...,move[n-p]
     // target points to:
     //   NULL Game_none
@@ -305,9 +302,9 @@ Searchstate_t calcMove( GMove_t * gmove, Bits_t target ) {
     // clear moves
     Bits_t thisGame = gmove[0] ;
     thisGame &= ~gmove[1] ;
-    showBits( thisGame ) ;
-    for (int m=1 ; m<=poison_plus ; ++m ) printf("%lu ",gmove[m]) ;
-    printf("\n");
+    //showBits( thisGame ) ;
+    //for (int m=1 ; m<=poison_plus ; ++m ) printf("%lu ",gmove[m]) ;
+    //printf("\n");
 
     // calculate where they jump to
     gmove[0] = Game_none ;
@@ -328,7 +325,7 @@ Searchstate_t calcMove( GMove_t * gmove, Bits_t target ) {
     }
 
     // Already seen?
-    if ( gamesSeenFound( gmove ) == True ) {
+    if ( findStoredStates( gmove ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
@@ -395,7 +392,7 @@ void backTraceRestart( int lastDay, int thisDay ) {
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
-    RGMove_t move[ poison_plus + 1 ] ;
+    RGM_t move[ poison_plus + 1 ] ;
     Bits_t target = victoryGame[thisDay] ;
 
     nextRGMove = 0 ;
@@ -413,7 +410,7 @@ void backTraceRestart( int lastDay, int thisDay ) {
     printf("\n");
     // set Initial position
     memmove( RGMoveCurrent + nextRGMove, move, RGM_size ) ;
-    gamesSeenFound( move+1 ) ; // flag this configuration
+    findStoredStates( move+1 ) ; // flag this configuration
     nextRGMove = RGMoveINC( nextRGMove ) ;
     
     // Now loop through days
@@ -447,7 +444,7 @@ void fixupTrace( void ) {
                 gap = True ;
                 if ( ! unsolved ) {
                     // do only once if needed
-                    gamesSeenCreate() ; // clear bits
+                    makeStoredState() ; // clear bits
                     unsolved = True ;
                 }
             } else {
@@ -468,7 +465,7 @@ void fixupTrace( void ) {
 }
 
 void fixupDay( int Day ) {
-    GMove_t move[poison_plus+1] ;
+    GM_t move[poison_plus+1] ;
     loadFromVictory( Day-1, move+1 ) ;
     for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
         move[0] = victoryGame[ Day-1 ] ;
@@ -501,7 +498,7 @@ void fixupMoves( void ) {
 
 void fixupGames( void ) {
     // Use moves to fill in games
-    GMove_t gmove[ poison_plus+1 ] ; // initial state
+    GM_t gmove[ poison_plus+1 ] ; // initial state
     loadFromVictory( 0, gmove ) ;
     for ( int Day = 1 ; Day < victoryDay ; ++Day ) {
         memmove( gmove+1, gmove, poison_plus ) ; // move state to prior
@@ -545,14 +542,14 @@ Searchstate_t primarySolveCreate( void ) {
     backTraceCreate() ;
 
     // initially no poison history of course
-    RGMove_t rgmove[poison_plus+1] ;
-    rgmove[0] = Game_all ; // refer
-    loadFromVictory( 0, rgmove+1 ) ;
+    RGM_t rgm2gmm[poison_plus+1] ;
+    rgm2gmm[0] = Game_all ; // refer
+    loadFromVictory( 0, rgm2gmm+1 ) ;
 
     // set Initial position
-    memmove( RGMoveCurrent + nextRGMove, rgmove, RGM_size ) ;
+    memmove( RGMoveCurrent + nextRGMove, rgm2gmm, RGM_size ) ;
     nextRGMove = RGMoveINC( nextRGMove ) ;
-    gamesSeenFound( rgmove+1 ) ; // flag this configuration
+    findStoredStates( rgm2gmm+1 ) ; // flag this configuration
     
     // Now loop through days
     for ( int Day=1 ; Day < MaxDays ; ++Day ) {
@@ -577,24 +574,24 @@ Searchstate_t primarySolveCreate( void ) {
 }
 
 Searchstate_t primarySolveDay( int Day, Bits_t target ) {
-    RGMove_t rgmove[poison_plus+1] ; // for poisoning
+    RGM_t rgm2gmm[poison_plus+1] ; // for poisoning
 
     size_t iold = indexRGMove ; // need to define before loop
     indexRGMove = nextRGMove ;
         
     for (  ; iold!=indexRGMove ; iold=RGMoveINC(iold) ) { // each possible position
-        memmove( rgmove, RGMoveCurrent+iold, RGM_size ) ; // leave space at start
-        Bits_t thisGame = rgmove[1] ;
+        memmove( rgm2gmm, RGMoveCurrent+iold, RGM_size ) ; // leave space at start
+        Bits_t thisGame = rgm2gmm[1] ;
         
         if ( victoryMove[Day] == Game_none ) { // no move specified
             // Search though all moves
             for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-                rgmove[0] = thisGame ; // overwrites refer, essentially adds to start of movelist 
-                rgmove[1]= Loc.Possible[ip] ; // actual move (and poisoning)
-                switch( calcMove( rgmove, target ) ) {
+                rgm2gmm[0] = thisGame ; // overwrites refer, essentially adds to start of movelist 
+                rgm2gmm[1]= Loc.Possible[ip] ; // actual move (and poisoning)
+                switch( calcMove( rgm2gmm, target ) ) {
                     case won:
                         victoryGame[Day-1] = thisGame ;
-                        loadToVictoryPlus( Day, rgmove ) ;
+                        loadToVictoryPlus( Day, rgm2gmm ) ;
                         if ( target == Game_none ) {
                             // real end of game
                             victoryDay = Day ;
@@ -607,7 +604,7 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
                     case forward:
                         // Add this game state to the furture evaluation list
                         RGMoveCurrent[nextRGMove] = RGMoveCurrent[iold] ; // refer
-                        memmove( RGMoveCurrent + nextRGMove +1 , rgmove, poison_size ) ; // rest of gmove
+                        memmove( RGMoveCurrent + nextRGMove +1 , rgm2gmm, poison_size ) ; // rest of gmove
                         nextRGMove = RGMoveINC( nextRGMove ) ;
                         if ( nextRGMove == iold ) { // head touches tail
                             printf("Too large a solution space\n");
@@ -621,12 +618,12 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
             }
         } else {
             // known move
-            rgmove[0] = thisGame ; // again shifting entries to make soon for newer move
-            rgmove[1]= victoryMove[Day] ; // actual move (and poisoning)
-            switch( calcMove( rgmove, target ) ) {
+            rgm2gmm[0] = thisGame ; // again shifting entries to make soon for newer move
+            rgm2gmm[1]= victoryMove[Day] ; // actual move (and poisoning)
+            switch( calcMove( rgm2gmm, target ) ) {
                 case won:
                     victoryGame[Day-1] = thisGame ;
-                    loadToVictoryPlus( Day, rgmove ) ;
+                    loadToVictoryPlus( Day, rgm2gmm ) ;
                     if ( target == Game_none ) {
                         // real end of game
                         victoryDay = Day ;
@@ -637,7 +634,7 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
                 case forward:
                     // Add this game state to the future evaluation list
                     RGMoveCurrent[nextRGMove] = RGMoveCurrent[iold] ; // refer
-                    memmove( RGMoveCurrent + nextRGMove + 1, rgmove, poison_size ) ;
+                    memmove( RGMoveCurrent + nextRGMove + 1, rgm2gmm, poison_size ) ;
                     nextRGMove = RGMoveINC( nextRGMove ) ;
                     if ( nextRGMove == iold ) { // head touches tail
                         printf("Too large a solution space\n");

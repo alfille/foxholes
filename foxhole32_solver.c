@@ -18,8 +18,9 @@
 
 typedef uint32_t Bits_t;
 typedef uint64_t Map_t;
-typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
-typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t RGM_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GM_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t GMM_t; // game, move0, .. move[poison] == poison_plus+1 length
 
 #include "foxholes.h"
 

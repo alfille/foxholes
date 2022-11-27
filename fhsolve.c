@@ -17,8 +17,9 @@
  * */
 
 typedef uint64_t Bits_t;
-typedef Bits_t RGMove_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
-typedef Bits_t GMove_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t RGM_t; // refer, game, move0, .. move[poison-1] == poison_plus+1 length
+typedef Bits_t GM_t; // game, move0, .. move[poison-1] == poison_plus length
+typedef Bits_t GMM_t; // game, move0, .. move[poison] == poison_plus+1 length
 
 #include "foxholes.h"
 
@@ -61,7 +62,7 @@ char * connName( Connection_t c ) ;
 void printStatus( char * progname ) ;
 Validation_t validate( void ) ;
 
-void gamesSeenCreate() ;
+void makeStoredState() ;
 void jumpHolesCreate( Bits_t * J ) ;
 
 size_t binomial( int N, int M ) ;
@@ -73,8 +74,8 @@ Searchstate_t nextDay( int day ) ;
 Searchstate_t calcMove( int day ) ;
 
 int compare(const void* numA, const void* numB) ;
-void gamesSeenAdd( Bits_t g ) ;
-Bool_t gamesSeenFound( Bits_t g ) ;
+void addStoredState( Bits_t g ) ;
+Bool_t findStoredStates( Bits_t g ) ;
 
 void showBits( Bits_t bb ) ;
 void showDoubleBits( Bits_t bb, Bits_t cc ) ;
@@ -123,7 +124,7 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Setting up game array\n");
     }
-    gamesSeenCreate(); // bitmap of game layouts (to avoid revisiting)
+    makeStoredState(); // bitmap of game layouts (to avoid revisiting)
 
     switch ( firstDay() ) {
         case won:
@@ -157,7 +158,7 @@ int main( int argc, char **argv )
     }
 }
 
-void gamesSeenCreate() {
+void makeStoredState() {
     // Loc.Sorted already set in premadeMovesCreate
     Loc.iSorted = 0 ;
     Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
@@ -182,7 +183,7 @@ int compare(const void* numA, const void* numB) {
     }
 }
 
-void gamesSeenAdd( Bits_t g ) {
+void addStoredState( Bits_t g ) {
     Loc.Unsorted[Loc.iUnsorted] = g ;
     ++Loc.iUnsorted ;
     if ( Loc.iUnsorted >= UNSORTSIZE ) {
@@ -199,14 +200,14 @@ void gamesSeenAdd( Bits_t g ) {
     }
 }
 
-Bool_t gamesSeenFound( Bits_t g ) {
+Bool_t findStoredStates( Bits_t g ) {
     if ( bsearch( &g, Loc.Sorted,    Loc.iSorted,   sizeof( Bits_t ), compare ) != NULL ) {
         return True ;
     }
     if ( lfind( &g, Loc.Unsorted, &Loc.iUnsorted, sizeof( Bits_t ), compare ) != NULL ) {
         return True ;
     }
-    gamesSeenAdd( g ) ;
+    addStoredState( g ) ;
     return False ;
 }
 
@@ -245,7 +246,7 @@ Searchstate_t calcMove( int day ) {
     }
 
     // Already seen?
-    if ( gamesSeenFound( new_game ) == True ) {
+    if ( findStoredStates( new_game ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
@@ -264,7 +265,7 @@ Searchstate_t firstDay( void ) {
     for( int i=0 ; i<=MaxPoison ; ++i ) { // backward
         victoryMovePlus[i] = Game_none ;
     }
-    gamesSeenAdd( Game_all ) ;
+    addStoredState( Game_all ) ;
 
     switch ( nextDay( 0 ) ) {
         case won:

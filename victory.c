@@ -31,7 +31,7 @@ void setupVictory() {
     }
 }
 
-void loadFromVictory( int Day, GMove_t * move ) {
+void loadFromVictory( int Day, GM_t * move ) {
     move[0] = victoryGame[Day] ;
     for ( int p = 1 ; p < poison_plus ; ++p ) {
         move[p] = victoryMove[ Day + 1 - p ] ;
@@ -40,7 +40,7 @@ void loadFromVictory( int Day, GMove_t * move ) {
     //showDoubleBits( move[1],move[0]);
 }
 
-void loadToVictory( int Day, GMove_t * move ) {
+void loadToVictory( int Day, GM_t * move ) {
     victoryGame[ Day ] = move[0] ;
     for ( int p = 1 ; p < poison_plus ; ++p ) {
         victoryMove[ Day + 1 - p ] = move[p] ;
@@ -49,7 +49,7 @@ void loadToVictory( int Day, GMove_t * move ) {
     //showDoubleBits( move[1],move[0]);
 }
 
-void loadToVictoryPlus( int Day, GMove_t * move ) {
+void loadToVictoryPlus( int Day, GMM_t * move ) {
     victoryGame[ Day ] = move[0] ;
     for ( int p = 1 ; p <= poison_plus ; ++p ) {
         victoryMove[ Day + 1 - p ] = move[p] ;
