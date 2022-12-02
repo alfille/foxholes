@@ -144,6 +144,7 @@ void showWin( void ) ;
 void loadToVictory( int Day, GM_t * move ) ;
 void loadToVictoryPlus( int Day, GMM_t * move ) ;
 void loadFromVictory( int Day, GM_t * move ) ;
+void loadFromVictoryPlus( int Day, GM_t * move ) ;
 
 void jsonOut( void ) ;
 
@@ -157,6 +158,7 @@ void jsonOut( void ) ;
 #include "status.c"
 #include "moves.c"
 #include "compare.c"
+#include "storedState.c"
 
 int main( int argc, char **argv )
 {
@@ -232,58 +234,6 @@ int main( int argc, char **argv )
             fclose( jfile ) ;
         }
     }
-}
-
-void makeStoredState() {
-    // Loc.Sorted already set in premadeMovesCreate
-    // Basically there is a list of stored states ( game positions possibly including poisoned path )
-    // The list is sorted except the tail end that has unsorted for a linear search
-    // every so often, the unsorted is sorted back into sorted.
-    Loc.iSorted = 0 ;
-    Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
-    Loc.iUnsorted = 0 ;
-    Loc.Next = Loc.Unsorted ;
-    //Loc.free = STORESIZE - (Loc.Sorted - Loc.Jumps) ;
-    //printf("Jump %p, Possible %p, Sort %p, Usort %p\n",Loc.Jumps,Loc.Possible,Loc.Sorted,Loc.Unsorted);
-    //printf("Jump %lu, Possible %lu, Sort %lu, Usort %lu\n",(size_t) holes,Loc.iPossible,Loc.iSorted,Loc.iUnsorted);
-}
-
-Bool_t findStoredStates( GM_t * g ) {
-    // actually tries to find --> returns True
-    // or adds to unsorted --> returns False
-    // might re-sort if threshold met
-    // aborts if no space
-
-    // fast binary search in sorted
-    if ( bsearch( g, Loc.Sorted,    Loc.iSorted,   search_size, compare ) != NULL ) {
-        return True ;
-    }
-
-    // liner search in unsorted -- will add so need to keep track of size to see that
-    size_t ius = Loc.iUnsorted ;
-    lsearch( g, Loc.Unsorted, &Loc.iUnsorted, search_size, compare ) ;
-    if ( ius == Loc.iUnsorted ) {
-        // found
-        return True ;
-    }
-    
-    // added to unsorted, move counter. iUnsorted (the count) already incremented
-    Loc.Next += search_elements ;
-    
-    // See if need to move unsorted to sorted and check for enough space for next increment
-    if ( Loc.iUnsorted >= UNSORTSIZE ) { // move unsorted -> sorted
-        Loc.free -= Loc.iUnsorted * search_elements ;
-        if ( Loc.free <= (size_t) (UNSORTSIZE * search_elements) ) { // test if enough space
-            fprintf(stderr, "Memory exhausted adding games seen\n");
-            exit(1);
-        }
-        //printf("Sorting\n");
-        Loc.iSorted += Loc.iUnsorted ;
-        qsort( Loc.Sorted, Loc.iSorted, search_size, compare );
-        Loc.Unsorted = Loc.Next ;
-        Loc.iUnsorted = 0 ;
-    }
-    return False ;
 }
 
 Searchstate_t calcMove( GMM_t * gmove, Bits_t target ) {
@@ -498,13 +448,13 @@ void fixupMoves( void ) {
 
 void fixupGames( void ) {
     // Use moves to fill in games
-    GM_t gmove[ poison_plus+1 ] ; // initial state
-    loadFromVictory( 0, gmove ) ;
-    for ( int Day = 1 ; Day < victoryDay ; ++Day ) {
-        memmove( gmove+1, gmove, poison_plus ) ; // move state to prior
-        gmove[1] = victoryMove[Day] ; // add newest move
+    showWin();
+    GMM_t gmove[ poison_plus+1 ] ; // initial state
+    for ( int Day = 1 ; Day <= victoryDay ; ++Day ) {
+        loadFromVictoryPlus( Day, gmove ) ;
+        gmove[0] = victoryGame[Day-1] ;
         calcMove( gmove, Game_none ) ; // calculate game
-        loadToVictory( Day, gmove ) ;
+        victoryGame[Day] = gmove[0] ;
     }
 }
 
@@ -520,7 +470,7 @@ void primarySolve( void ) {
     case won:
         fixupTrace() ; // fill in game path
         fixupMoves() ; // fill in missing moves
-        //fixupGames() ; // fill in missing games
+        fixupGames() ; // fill in missing games
         printf("\n");
         printf("Winning Strategy:\n");
         showWin() ;

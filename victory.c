@@ -40,6 +40,15 @@ void loadFromVictory( int Day, GM_t * move ) {
     //showDoubleBits( move[1],move[0]);
 }
 
+void loadFromVictoryPlus( int Day, GMM_t * move ) {
+    move[0] = victoryGame[Day] ;
+    for ( int p = 1 ; p <= poison_plus ; ++p ) {
+        move[p] = victoryMove[ Day + 1 - p ] ;
+    }
+    //printf("Load from victory day %d\n",Day);
+    //showDoubleBits( move[1],move[0]);
+}
+
 void loadToVictory( int Day, GM_t * move ) {
     victoryGame[ Day ] = move[0] ;
     for ( int p = 1 ; p < poison_plus ; ++p ) {
