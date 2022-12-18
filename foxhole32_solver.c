@@ -395,7 +395,7 @@ void lowPoison( void ) {
         printf("\n");
         printf("Winning Strategy:\n");
         for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-            printf("Day%3d Move_t ## Game \n",d);
+            printf("Day%3d Move ## Game \n",d);
             showDoubleBits( victoryMove[d],victoryGame[d] ) ;
         }
         break ;

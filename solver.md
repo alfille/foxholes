@@ -155,7 +155,7 @@ One of the choices for a foxhole game design is adding some days of poisoning in
 
 Unfortunately, poisoning for more than 1 day adds complexity to the Game State -- the Game position should include some days of extra history.
 
-None of the solvers include multi-day poisoning in their Game State. So solutions found will be valid (especially for `fhsolve`) but may not be optimal. Nor will the search be exhaustive.
+Some of the solvers include multi-day poisoning in their Game State (with the `-r` or `--rigorous` command line option. These solution strategies are slower since there are many more possible states. Without `--rigorous`, the generated solutions will still be valid, but possibly not optimal. 
 
 ## Implementation
 ### Algorithms
@@ -174,6 +174,79 @@ None of the solvers include multi-day poisoning in their Game State. So solution
   * Up to 64 holes
   * Game-states kept in sorted list
   * Winning path kept in simple list
+  
+### fhsolve issues
+* Initial pure depth-first implementation tends to "bottom out" for poison games:
+```
+./fhsolve -r -l5 -w3 -p3 -v2
+./fhsolve solver -- {c} 2022 Paul H Alfille
+
+Length 5 X Width 3
+         total 15 holes 
+Geometry_t: circle
+Connection: rectangular
+
+2 holes visited per day
+        Holes poisoned for 3 days
+
+        Rigorous poison states? yes
+
+
+Victory in 1000 days
+Winning Strategy: ...
+```
+
+Note that foxhole64_solver finds the solution in 5 days (even without rigorous).
+
+Rigorous is very slow.
+```
+./foxhole64_solver -r -l5 -w3 -p3 -v2
+./foxhole64_solver solver -- {c} 2022 Paul H Alfille
+
+Length 5 X Width 3
+         total 15 holes 
+Geometry_t: circle
+Connection: rectangular
+
+2 holes visited per day
+        Holes poisoned for 3 days
+
+        Rigorous poison states? yes
+
+Day 1, States: 1, Moves 105, Total 1
+Day 2, States: 105, Moves 105, Total 106
+Day 3, States: 11025, Moves 105, Total 11131
+Day 4, States: 738255, Moves 105, Total 749386
+Day 5, States: 2913255, Moves 105, Total 3662641
+Victory Day 5
+Victory in 5 days!
+
+
+Winning Strategy:
+Day  0 Move ## Game 
+ | | | | |  ##  X|X|X|X|X|
+ | | | | |  ##  X|X|X|X|X|
+ | | | | |  ##  X|X|X|X|X|
+Day  1 Move ## Game 
+X|X| | | |  ##   | |X|X|X|
+ | | | | |  ##  X|X|X|X|X|
+ | | | | |  ##  X|X|X|X|X|
+Day  2 Move ## Game 
+X| | | | |  ##   | |X|X|X|
+ |X| | | |  ##  X| |X|X|X|
+ | | | | |  ##  X|X|X|X|X|
+Day  3 Move ## Game 
+ | | |X| |  ##   | | | |X|
+ | |X| | |  ##  X| | |X|X|
+ | | | | |  ##  X|X|X|X|X|
+Day  4 Move ## Game 
+ | | | | |  ##   | | | | |
+ | | | |X|  ##   | | |X| |
+X| | | | |  ##   |X|X|X|X|
+Day  5 Move ## Game 
+ | | | | |  ##   | | | | |
+ | | | | |  ##   | | | | |
+ |X| |X| |  ##   | | | | |```
 
 ### bit-maps
 Extensive use of bitmaps for calculations:

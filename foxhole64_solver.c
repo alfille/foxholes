@@ -296,7 +296,7 @@ void backTraceExecute( int generation, Bits_t refer ) {
     // generation is index in backTraceState entries list (in turn indexes circular buffer)
     while ( refer != Game_all ) {
         int day = backTraceState.entries[generation].day ;
-        loadToVictory( day, RGMoveBack + refer + 1 ) ;
+        loadToVictory( day, RGMoveBack + refer + 1 ) ; // backtrace stores poison-1 moves
         refer = RGMoveBack[refer] ;
         //printf("Backtracing, day %d.\n",day);
         //showWin();
@@ -415,11 +415,12 @@ void fixupTrace( void ) {
 }
 
 void fixupDay( int Day ) {
-    GM_t move[poison_plus+1] ;
-    loadFromVictory( Day-1, move+1 ) ;
+    // find the move for this day
+    GMM_t move[poison_plus+1] ;
+    loadFromVictory( Day-1, move+1 ) ; // full poison days
     for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-        move[0] = victoryGame[ Day-1 ] ;
-        move[1] = Loc.Possible[ip] ; // actual move (and poisoning)
+        move[0] = victoryGame[ Day-1 ] ; // prior game position
+        move[1] = Loc.Possible[ip] ; // test move
 
         switch ( calcMove( move, victoryGame[Day] ) ) {
             case won:
@@ -448,7 +449,6 @@ void fixupMoves( void ) {
 
 void fixupGames( void ) {
     // Use moves to fill in games
-    showWin();
     GMM_t gmove[ poison_plus+1 ] ; // initial state
     for ( int Day = 1 ; Day <= victoryDay ; ++Day ) {
         loadFromVictoryPlus( Day, gmove ) ;
@@ -485,7 +485,7 @@ Searchstate_t primarySolveCreate( void ) {
     // Set up arrays of game states
     //  will evaluate all states for each day for all moves and add to next day if unique
 
-    nextRGMove = 0 ;
+    nextRGMove = 0 ; // start of the circular move list
     indexRGMove = nextRGMove ;
 
     // set back-solver state
@@ -493,10 +493,10 @@ Searchstate_t primarySolveCreate( void ) {
 
     // initially no poison history of course
     RGM_t rgm2gmm[poison_plus+1] ;
-    rgm2gmm[0] = Game_all ; // refer
-    loadFromVictory( 0, rgm2gmm+1 ) ;
+    rgm2gmm[0] = Game_all ; // refer -- marker for start of the chain
+    loadFromVictory( 0, rgm2gmm+1 ) ; // aready set up for defaults
 
-    // set Initial position
+    // set Initial position -- sinmple movelist (only one element, of course, the initial position)
     memmove( RGMoveCurrent + nextRGMove, rgm2gmm, RGM_size ) ;
     nextRGMove = RGMoveINC( nextRGMove ) ;
     findStoredStates( rgm2gmm+1 ) ; // flag this configuration
@@ -541,13 +541,12 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
                 switch( calcMove( rgm2gmm, target ) ) {
                     case won:
                         victoryGame[Day-1] = thisGame ;
-                        loadToVictoryPlus( Day, rgm2gmm ) ;
+                        loadToVictoryPlus( Day, rgm2gmm ) ; // have the full poison days
                         if ( target == Game_none ) {
                             // real end of game
                             victoryDay = Day ;
                         }
                         printf("Victory Day %d\n",Day);
-                        //showWin() ;
                         // Go through backtraces and fill in solutions found
                         backTraceExecute( backDEC(backTraceState.nextEntry), RGMoveCurrent[iold] ) ;
                         return won;
@@ -573,7 +572,7 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
             switch( calcMove( rgm2gmm, target ) ) {
                 case won:
                     victoryGame[Day-1] = thisGame ;
-                    loadToVictoryPlus( Day, rgm2gmm ) ;
+                    loadToVictoryPlus( Day, rgm2gmm ) ; // full victory days
                     if ( target == Game_none ) {
                         // real end of game
                         victoryDay = Day ;

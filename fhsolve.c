@@ -47,8 +47,65 @@ struct {
 #define MaxDays 1000
 #define MaxPoison MaxDays
 
-#define working_size MaxPoison + MaxDays
-GMM_t working[ working_size ] ;
+struct {
+    enum state { bi_initial, bi_unbounded, bi_bounded, } ;
+    int known_bad ; // largest unsuccessful day limit
+    int known_good ; // smallest successful day limit (-1 if no solution yet found)
+    int current_max ; // current limit to be tested
+    int increment ;
+    int max ;
+} Bisect = {
+    .state = bi_initial,
+    .known_bad = 0,
+    .known_good = -1 ;
+    .max = MaxDays,
+}
+
+Bool_t Bisector( int found, int * new_max )
+{
+    // Does bisect analysis for limit between 0 and MaxDays
+    // found is solution day, or <1 for no solution
+    // new_max is limit days to try, negative if no solution
+    // Return True if more processing possible, else False
+    
+    switch (Bisect.state) {
+        case bi_initial:
+            Bisect.increment = holes / visits ;
+            Bisect.state = bi_unbounded ;
+            break ;
+        case bi_unbounded:
+            if ( found > 0 ) {
+                Bisect.state = bi_bounded ;
+                Bisect.known_good = found ;
+                Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
+            } else {
+                Bisect.increment *= 2 ;
+                int real_limit = Bisect.max - Bisect.known_bad ;
+                if ( Bisect.increment > real_limit ) {
+                    Bisect.increment = real_limit ;
+                }
+            }
+            break ;
+        case bi_bounded:
+            if ( found > 0 ) {
+                Bisect.known_good = found ;
+            } else 
+                Bisect.known_bad = found ;
+            }
+            Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
+            break ;
+    }
+    if ( Bisect.increment < 1 ) {
+        *new_max = Bisect.current_max ;
+        return False ;
+    } else {
+        Bisect.current_max = Bisect.known_bad + Bisect.increment ;
+        *new_max = Bisect.current_max ;
+        return True ;
+    }
+}        
+
+int maxdays ;
 
 // Bit macros
 // 64 bit for games, moves, jumps
@@ -74,7 +131,8 @@ int premadeMovesRecurse( Bits_t * Moves, int index, int start_hole, int left, Bi
 Searchstate_t firstDay( void ) ;
 Searchstate_t nextDay( int day ) ;
 
-Searchstate_t calcMove( GMM_t * gmove ) ;
+Searchstate_t calcMove( int day ) ;
+Searchstate_t calcMoveFinal( int day ) ;
 
 void makeStoredState() ;
 Bool_t findStoredStates( GM_t * g ) ;
@@ -159,10 +217,6 @@ int main( int argc, char **argv )
             break ;
     }
 
-    for ( int i=0 ; i<working_size ; ++i ) {
-        working[i] = 0 ;
-    }
-
     switch ( firstDay() ) {
         case won:
             printf("\n");
@@ -195,7 +249,7 @@ int main( int argc, char **argv )
     }
 }
 
-Searchstate_t calcMove( GMM_t * gmove ) {
+Searchstate_t calcMove( int day ) {
     // coming in, move has game,newmove,move0,..move[p-2]
     // returning move has newgame,newmove,move0,...,move[n-p]
     // target points to:
@@ -207,34 +261,34 @@ Searchstate_t calcMove( GMM_t * gmove ) {
             printf(".\n");
         }
     }
+    //printf("Calc move day=%d %lX, %lX", day, victoryMove[day+1], victoryMove[day]);
 
     // clear moves
-    Bits_t thisGame = gmove[0] ;
-    thisGame &= ~gmove[1] ;
-    //showBits( thisGame ) ;
-    //for (int m=1 ; m<=poison_plus ; ++m ) printf("%lu ",gmove[m]) ;
-    //printf("\n");
+    Bits_t thisGame = victoryMove[day+1] ;
+    thisGame &= ~victoryMove[day] ;
 
     // calculate where they jump to
-    gmove[0] = Game_none ;
+    Bits_t nextGame = Game_none ;
     for ( int j=0 ; j<holes ; ++j ) {
         if ( getB( thisGame, j ) ) { // fox currently
-             gmove[0] |= Loc.Jumps[j] ; // jumps to here
+             nextGame |= Loc.Jumps[j] ; // jumps to here
         }
     }
 
     // do poisoning
-    for ( int p=1 ; p<=poison ; ++p ) {
-        gmove[0] &= ~gmove[p] ;
+    for ( int p=0 ; p<poison ; ++p ) {
+        nextGame &= ~victoryMove[day-p] ;
     }
+    victoryMove[day+1] = nextGame ;
+    //printf(" -> %lX\n",nextGame);
     
     // Victory? (No foxes or other goal in fixup backtracking mode)
-    if ( gmove[0] == Game_none ) {
+    if ( nextGame == Game_none ) {
             return won ;
     }
 
     // Already seen?
-    if ( findStoredStates( gmove ) == True ) {
+    if ( findStoredStates( victoryMove + day + 2 - search_elements ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
@@ -243,23 +297,54 @@ Searchstate_t calcMove( GMM_t * gmove ) {
     return forward ;
 }
 
-Searchstate_t firstDay( void ) {
-    // set up Games and Moves
-    for ( int i=0 ; i<working_size ; ++i ) {
-        working[i] = Game_none ;
+Searchstate_t calcMoveFinal( int day ) {
+    // Called on last day -- no need to add to list or prune, just check for victory
+    
+    // coming in, move has game,newmove,move0,..move[p-2]
+    // returning move has newgame,newmove,move0,...,move[n-p]
+    // target points to:
+    //   NULL Game_none
+    //   non--NULL, move array (poison_plus length)
+
+    // clear moves
+    Bits_t thisGame = victoryMove[day+1] ;
+    thisGame &= ~victoryMove[day] ;
+
+    // calculate where they jump to
+    Bits_t nextGame = Game_none ;
+    for ( int j=0 ; j<holes ; ++j ) {
+        if ( getB( thisGame, j ) ) { // fox currently
+             nextGame |= Loc.Jumps[j] ; // jumps to here
+        }
     }
 
-    GMM_t * pworking = & working[ working_size - poison_plus -1 ] ;
+    // do poisoning
+    for ( int p=0 ; p<poison ; ++p ) {
+        nextGame &= ~victoryMove[day-p] ;
+    }
+    
+    // Victory? (No foxes or other goal in fixup backtracking mode)
+    if ( nextGame == Game_none ) {
+        victoryMove[day+1] = nextGame ;
+        return won ;
+    }
+
+    // Not victory -- back up since at maxdays
+    return retry ;
+}
+
+Searchstate_t firstDay( void ) {
+    // set up Games and Moves
+
     victoryGame[0] = Game_all ;
-    pworking[0] = victoryGame[0] ;
-    findStoredStates( pworking ) ; // salt the sort array
+    victoryMove[0] = Game_all ; // temporary
+    findStoredStates( victoryMove +1 - search_elements ) ; // salt the sort array
+
+    maxdays = MaxDays ; // copy of maxdays
 
     switch ( nextDay( 0 ) ) {
         case won:
             // move working into victoryMove (reverse it)
-            for ( int d = 0 ; d <= victoryDay ; ++d ) {
-                victoryMove[d] = working[ working_size - poison_plus - d ] ;
-            }
             return won ;
         case backward:
             return lost;
@@ -277,23 +362,35 @@ Searchstate_t nextDay( int day ) {
     // Moves are tested for this day
     int ovrflw = 0 ;
 
-    if ( day >= MaxDays ) {
-        return overflow;
+    if ( day == maxdays-1 ) {
+        victoryMove[ day+1 ]  = victoryGame[day] ; // temporary storage
+        victoryMove[ day ] = Loc.Possible[ip] ; // test move
+                
+        switch( calcMoveFinal( day ) ) {
+            case won:
+                victoryDay = day+1 ;
+                victoryGame[victoryDay] = Game_none ;
+                return won;
+            case retry:
+                break ;
+            default:
+                fprintf(stderr,"Unknown error\n");
+                break ;
+        }
+        return overflow ;            
     }
 
-    GMM_t * pworking = & working[ working_size - poison_plus -1 -day ] ;
-    
     for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-        pworking[0] = victoryGame[day] ;
-        pworking[1] = Loc.Possible[ip] ; // actual move (and poisoning)
+        victoryMove[ day+1 ]  = victoryGame[day] ; // temporary storage
+        victoryMove[ day ] = Loc.Possible[ip] ; // test move
                 
-        switch( calcMove( pworking ) ) {
+        switch( calcMove( day ) ) {
             case won:
                 victoryDay = day+1 ;
                 victoryGame[victoryDay] = Game_none ;
                 return won;
             case forward:
-                victoryGame[day+1] = pworking[0] ;
+                victoryGame[day+1] = victoryMove[day+1] ;
                 switch ( nextDay( day+1 ) ) {
                     case won:
                         return won ;
