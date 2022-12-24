@@ -46,65 +46,6 @@ struct {
 #define MaxHoles 64
 #define MaxDays 1000
 #define MaxPoison MaxDays
-
-struct {
-    enum state { bi_initial, bi_unbounded, bi_bounded, } ;
-    int known_bad ; // largest unsuccessful day limit
-    int known_good ; // smallest successful day limit (-1 if no solution yet found)
-    int current_max ; // current limit to be tested
-    int increment ;
-    int max ;
-} Bisect = {
-    .state = bi_initial,
-    .known_bad = 0,
-    .known_good = -1 ;
-    .max = MaxDays,
-}
-
-Bool_t Bisector( int found, int * new_max )
-{
-    // Does bisect analysis for limit between 0 and MaxDays
-    // found is solution day, or <1 for no solution
-    // new_max is limit days to try, negative if no solution
-    // Return True if more processing possible, else False
-    
-    switch (Bisect.state) {
-        case bi_initial:
-            Bisect.increment = holes / visits ;
-            Bisect.state = bi_unbounded ;
-            break ;
-        case bi_unbounded:
-            if ( found > 0 ) {
-                Bisect.state = bi_bounded ;
-                Bisect.known_good = found ;
-                Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
-            } else {
-                Bisect.increment *= 2 ;
-                int real_limit = Bisect.max - Bisect.known_bad ;
-                if ( Bisect.increment > real_limit ) {
-                    Bisect.increment = real_limit ;
-                }
-            }
-            break ;
-        case bi_bounded:
-            if ( found > 0 ) {
-                Bisect.known_good = found ;
-            } else 
-                Bisect.known_bad = found ;
-            }
-            Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
-            break ;
-    }
-    if ( Bisect.increment < 1 ) {
-        *new_max = Bisect.current_max ;
-        return False ;
-    } else {
-        Bisect.current_max = Bisect.known_bad + Bisect.increment ;
-        *new_max = Bisect.current_max ;
-        return True ;
-    }
-}        
-
 int maxdays ;
 
 // Bit macros
@@ -123,6 +64,9 @@ char * connName( Connection_t c ) ;
 void printStatus( char * progname ) ;
 Validation_t validate( void ) ;
 
+Bool_t Bisector( int found, int * new_max ) ;
+Searchstate_t BisectionSearch( void ) ;
+
 void jumpHolesCreate( Bits_t * J ) ;
 
 size_t binomial( int N, int M ) ;
@@ -139,6 +83,9 @@ Bool_t findStoredStates( GM_t * g ) ;
 
 void showBits( Bits_t bb ) ;
 void showDoubleBits( Bits_t bb, Bits_t cc ) ;
+void showWin( void ) ;
+void showW( void ) ;
+
 
 void jsonOut( void ) ;
 
@@ -162,7 +109,6 @@ int main( int argc, char **argv )
     // Print final arguments
     printStatus(argv[0]);    
 
-    setupVictory() ;
     if ( update ) {
         printf("Setting up moves\n");
     }
@@ -183,10 +129,6 @@ int main( int argc, char **argv )
     Loc.Sorted = Loc.Possible + Loc.iPossible ;
     Loc.free -= Loc.iPossible ;
     
-    if ( update ) {
-        printf("Setting up game array\n");
-    }
-    makeStoredState(); // bitmap of game layouts (to avoid revisiting)
 
     if (rigorous) {
         search_elements = poison_plus ;
@@ -217,15 +159,12 @@ int main( int argc, char **argv )
             break ;
     }
 
-    switch ( firstDay() ) {
+    switch ( BisectionSearch() ) {
         case won:
             printf("\n");
             printf("Victory in %d days\n",victoryDay);
             printf("Winning Strategy:\n");
-            for ( int d = 0 ; d < victoryDay+1 ; ++d ) {
-                printf("Day%3d victoryMove ## victoryGame \n",d);
-                showDoubleBits( victoryMove[d],victoryGame[d] ) ;
-            }
+            showWin();
             break ;
         case lost:
             printf("\n");
@@ -233,7 +172,7 @@ int main( int argc, char **argv )
             break ;
         case overflow:
             printf("\n");
-            printf("No solution within maximum %d days.\n",MaxDays);
+            printf("No solution within maximum %d days.\n",maxdays);
             break ;        
         default:
             fprintf(stderr,"Unknown error\n");
@@ -248,6 +187,137 @@ int main( int argc, char **argv )
         }
     }
 }
+
+void showWin( void ) {
+    for ( int d = 0 ; d <= victoryDay ; ++d ) {
+        printf("Day%3d Move ## Game \n",d);
+        showDoubleBits( victoryMove[d],victoryGame[d] ) ;
+    }
+}
+void showW( void ) {
+    int vd = victoryDay ;
+    victoryDay = maxdays ;
+    showWin();
+    victoryDay = vd ;
+}
+
+Searchstate_t BisectionSearch( void )
+{
+    int found  = 0 ;
+    Bits_t vM[MaxDays+1] ;
+    Bits_t vG[MaxDays+1] ;
+
+    while ( Bisector( found, &maxdays ) ) {
+        setupVictory() ;
+        if ( update ) {
+            printf("Setting up game array\n");
+        }
+        // reset stored state
+        makeStoredState(); // bitmap of game layouts (to avoid revisiting)
+    
+        switch ( firstDay() ) {
+            case won:
+                printf("\n");
+                printf("Victory in %d days\n",victoryDay);
+                for ( int d=0 ; d<=victoryDay ; ++d ) {
+                    vG[d] = victoryGame[d];
+                    vM[d] = victoryMove[d];
+                }
+                found = victoryDay ;
+                break ;
+            case lost:
+                printf("Not solved.\nUnwinnable game (with these settings)\n");
+                return lost ;
+                break ;
+            case overflow:
+                printf("\n");
+                printf("No solution within maximum %d days.\n",maxdays);
+                for ( int d=0 ; d<=victoryDay ; ++d ) {
+                    victoryGame[d] = vG[d];
+                    victoryMove[d] = vM[d];
+                }
+                found = 0 ;
+                break ;
+/*
+            case forward:
+                printf("BS forward\n");
+                break ;
+            case backward:
+                printf("BS backward\n");
+                break ;
+            case retry:
+                printf("BS retry\n");
+                break ;
+*/
+            default:
+                fprintf(stderr,"Unknown error\n");
+                break ;            
+        }        
+    }
+
+    return maxdays>0? won : overflow ;
+}
+
+struct {
+    enum { bi_initial, bi_unbounded, bi_bounded, } state ;
+    int known_bad ; // largest unsuccessful day limit
+    int known_good ; // smallest successful day limit (-1 if no solution yet found)
+    int current_max ; // current limit to be tested
+    int increment ;
+    int max ;
+} Bisect = {
+    .state = bi_initial,
+} ;
+
+Bool_t Bisector( int found, int * new_max )
+{
+    // Does bisect analysis for limit between 0 and MaxDays
+    // found is solution day, or <1 for no solution
+    // new_max is limit days to try, negative if no solution
+    // Return True if more processing possible, else False
+    switch (Bisect.state) {
+        case bi_initial:
+            Bisect.known_bad = 0,
+            Bisect.known_good = -1 ;
+            Bisect.max = MaxDays,
+            Bisect.increment = holes / visits ;
+            Bisect.state = bi_unbounded ;
+            break ;
+        case bi_unbounded:
+            if ( found > 0 ) {
+                Bisect.state = bi_bounded ;
+                Bisect.known_good = found ;
+                Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
+            } else {
+                Bisect.known_bad = Bisect.current_max ;
+                Bisect.increment *= 2 ;
+                int real_limit = Bisect.max - Bisect.known_bad ;
+                if ( Bisect.increment > real_limit ) {
+                    Bisect.increment = real_limit ;
+                }
+            }
+            break ;
+        case bi_bounded:
+            if ( found > 0 ) {
+                Bisect.known_good = found ;
+            } else {
+                Bisect.known_bad = Bisect.current_max ;
+            }
+            Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
+            break ;
+    }
+    if ( Bisect.increment < 1 ) {
+        // no more -- either no solution (still unbounded), or solution is current limit
+        *new_max = Bisect.known_good ;
+        printf( "F Bisect State=%d, good=%d, bad=%d, current=%d, increment=%d, max=%d\n",Bisect.state,Bisect.known_good,Bisect.known_bad,Bisect.current_max,Bisect.increment,Bisect.max); 
+        return False ;
+    } else {
+        Bisect.current_max = Bisect.known_bad + Bisect.increment ;
+        *new_max = Bisect.current_max ;
+        printf( "T Bisect State=%d, good=%d, bad=%d, current=%d, increment=%d, max=%d\n",Bisect.state,Bisect.known_good,Bisect.known_bad,Bisect.current_max,Bisect.increment,Bisect.max); 
+        return True ;
+    }
+}        
 
 Searchstate_t calcMove( int day ) {
     // coming in, move has game,newmove,move0,..move[p-2]
@@ -264,7 +334,7 @@ Searchstate_t calcMove( int day ) {
     //printf("Calc move day=%d %lX, %lX", day, victoryMove[day+1], victoryMove[day]);
 
     // clear moves
-    Bits_t thisGame = victoryMove[day+1] ;
+    Bits_t thisGame = victoryGame[day-1] ;
     thisGame &= ~victoryMove[day] ;
 
     // calculate where they jump to
@@ -279,7 +349,7 @@ Searchstate_t calcMove( int day ) {
     for ( int p=0 ; p<poison ; ++p ) {
         nextGame &= ~victoryMove[day-p] ;
     }
-    victoryMove[day+1] = nextGame ;
+    victoryGame[day] = nextGame ;
     //printf(" -> %lX\n",nextGame);
     
     // Victory? (No foxes or other goal in fixup backtracking mode)
@@ -288,6 +358,7 @@ Searchstate_t calcMove( int day ) {
     }
 
     // Already seen?
+    victoryMove[day+1] = nextGame ;
     if ( findStoredStates( victoryMove + day + 2 - search_elements ) == True ) {
         // game configuration already seen
         return retry ; // means try another move
@@ -307,7 +378,7 @@ Searchstate_t calcMoveFinal( int day ) {
     //   non--NULL, move array (poison_plus length)
 
     // clear moves
-    Bits_t thisGame = victoryMove[day+1] ;
+    Bits_t thisGame = victoryGame[day-1] ;
     thisGame &= ~victoryMove[day] ;
 
     // calculate where they jump to
@@ -325,7 +396,7 @@ Searchstate_t calcMoveFinal( int day ) {
     
     // Victory? (No foxes or other goal in fixup backtracking mode)
     if ( nextGame == Game_none ) {
-        victoryMove[day+1] = nextGame ;
+        victoryGame[day] = nextGame ;
         return won ;
     }
 
@@ -337,12 +408,11 @@ Searchstate_t firstDay( void ) {
     // set up Games and Moves
 
     victoryGame[0] = Game_all ;
-    victoryMove[0] = Game_all ; // temporary
+    victoryMove[0] = Game_none ; // temporary
+    victoryMove[1] = Game_all ; // temporary
     findStoredStates( victoryMove +1 - search_elements ) ; // salt the sort array
 
-    maxdays = MaxDays ; // copy of maxdays
-
-    switch ( nextDay( 0 ) ) {
+    switch ( nextDay( 1 ) ) {
         case won:
             // move working into victoryMove (reverse it)
             return won ;
@@ -350,6 +420,15 @@ Searchstate_t firstDay( void ) {
             return lost;
         case overflow:
             return overflow;
+        case forward:
+            printf("FD forward\n");
+            break ;
+        case lost:
+            printf("FD lost\n");
+            break ;
+        case retry:
+            printf("FD retry\n");
+            break ;
         default:
             fprintf(stderr,"Unknown error\n");
             break ;            
@@ -362,35 +441,46 @@ Searchstate_t nextDay( int day ) {
     // Moves are tested for this day
     int ovrflw = 0 ;
 
-    if ( day == maxdays-1 ) {
-        victoryMove[ day+1 ]  = victoryGame[day] ; // temporary storage
-        victoryMove[ day ] = Loc.Possible[ip] ; // test move
-                
-        switch( calcMoveFinal( day ) ) {
-            case won:
-                victoryDay = day+1 ;
-                victoryGame[victoryDay] = Game_none ;
-                return won;
-            case retry:
-                break ;
-            default:
-                fprintf(stderr,"Unknown error\n");
-                break ;
+    if ( day == maxdays ) {
+        for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+            victoryMove[ day ] = Loc.Possible[ip] ; // test move
+                    
+            switch( calcMoveFinal( day ) ) {
+                case won:
+                    victoryDay = day ;
+                    return won;
+                case retry:
+                    break ;
+/*
+                case lost:
+                    printf("ND0 lost\n");
+                    break ;
+                case forward:
+                    printf("ND0 forward\n");
+                    break ;
+                case backward:
+                    printf("ND0 backward\n");
+                    break ;
+                case overflow:
+                    printf("ND0 overflow\n");
+                    break ;
+*/
+                default:
+                    fprintf(stderr,"Unknown error\n");
+                    break ;            
+            }
         }
         return overflow ;            
     }
 
     for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-        victoryMove[ day+1 ]  = victoryGame[day] ; // temporary storage
         victoryMove[ day ] = Loc.Possible[ip] ; // test move
                 
         switch( calcMove( day ) ) {
             case won:
-                victoryDay = day+1 ;
-                victoryGame[victoryDay] = Game_none ;
+                victoryDay = day ;
                 return won;
             case forward:
-                victoryGame[day+1] = victoryMove[day+1] ;
                 switch ( nextDay( day+1 ) ) {
                     case won:
                         return won ;
@@ -399,6 +489,17 @@ Searchstate_t nextDay( int day ) {
                     case overflow:
                         ovrflw = 1 ;
                         break ;
+/*
+                    case lost:
+                        printf("ND lost\n");
+                        break ;
+                    case forward:
+                        printf("ND forward\n");
+                        break ;
+                    case retry:
+                        printf("ND retry\n");
+                        break ;
+*/
                     default:
                         fprintf(stderr,"Strange status reported day %d\n",day+1);
                         break ;

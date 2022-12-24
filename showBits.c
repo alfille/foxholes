@@ -7,6 +7,7 @@ void showBits( Bits_t bb ) {
     switch (geo) {
         case Triangle:
             for ( int y=0 ; y<ylength ; ++y ) {
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( (x<=y) && getB( bb, T(x,y) ) ? "X|":" |" );
                 }
@@ -15,6 +16,7 @@ void showBits( Bits_t bb ) {
         break ;
         default:
             for ( int y=0 ; y<ylength ; ++y ) {
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( getB( bb, I(x,y) ) ? "X|":" |" );
                 }
@@ -28,10 +30,12 @@ void showDoubleBits( Bits_t bb, Bits_t cc ) {
     switch( geo ) {
         case Triangle:
             for ( int y=0 ; y<ylength ; ++y ) {
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( (x<=y) && getB( bb, T(x,y) ) ? "X|":" |" );
                 }
                 printf("  ##  ");
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( (x<=y) && getB( cc, T(x,y) ) ? "X|":" |" );
                 }
@@ -40,10 +44,12 @@ void showDoubleBits( Bits_t bb, Bits_t cc ) {
             break ;
         default:
             for ( int y=0 ; y<ylength ; ++y ) {
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( getB( bb, I(x,y) ) ? "X|":" |" );
                 }
                 printf("  ##  ");
+                printf("|");
                 for ( int x=0 ; x<xlength ; ++x ) {
                     printf( getB( cc, I(x,y) ) ? "X|":" |" );
                 }
