@@ -165,7 +165,7 @@ int main( int argc, char **argv )
     }
 
     // calculate iPremadeMoves (Binomial coefficient holes,visits)
-    iPremadeMoves = binomial( holes, visits ) ; ;
+    iPremadeMoves = binomial( holes, visits ) + 1 ; // 0 index is no move
     premadeMoves = (Bits_t *) malloc( iPremadeMoves*sizeof(Bits_t) ) ;
     if ( premadeMoves==NULL) {
         fprintf(stderr,"Memory exhausted move array\n");

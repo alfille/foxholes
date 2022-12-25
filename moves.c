@@ -24,6 +24,12 @@ int premadeMovesRecurse( Bits_t * Moves, int index, int start_hole, int left, Bi
     // start_hole hole to start_hole current left with
     // left visit number (visits down to 1)
     // pattern bitmap pattern to this point
+
+    // 0 index is no move
+    Moves[index]=0;
+    ++index ;
+
+    // generate moves:
     for ( int h=start_hole ; h<holes-left+1 ; ++h ) { // scan through positions for this visit
         Bits_t P = pattern ;
         setB( P, h );

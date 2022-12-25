@@ -23,6 +23,20 @@ typedef Bits_t GMM_t; // game, move0, .. move[poison] == poison_plus+1 length
 
 #include "foxholes.h"
 
+typedef uint32_t hBits_t ;
+typedef struct {
+        Bits_t game ;
+        union {
+            struct {
+                hBits_t day;
+                hBits_t move[64] ;
+            } ;
+            Bits_t full[33] ;
+        } ;
+} search_t ;
+search_t search_current ; // used for current search candidate
+int search_moves; // how many moves include
+
 #define STORESIZE 100000000
 Bits_t Store[STORESIZE] ;
 #define UNSORTSIZE 50
@@ -48,6 +62,12 @@ struct {
 #define MaxPoison MaxDays
 int maxdays ;
 
+// Arrays holding winning moves and game positions
+int victoryDay = -1;  // >=0 for success
+Bits_t victoryGame[MaxDays+1];
+Bits_t victoryMovePlus[MaxPoison+MaxDays+1];
+Bits_t * victoryMove = victoryMovePlus + MaxPoison ; // allows prior space for poisons
+
 // Bit macros
 // 64 bit for games, moves, jumps
 #define long1 ((uint64_t) 1)
@@ -67,6 +87,15 @@ Validation_t validate( void ) ;
 Bool_t Bisector( int found, int * new_max ) ;
 Searchstate_t BisectionSearch( void ) ;
 
+int compare0(const void* vkey, const void* vlist) ;
+int compare1(const void* vkey, const void* vlist) ;
+int compare2(const void* vkey, const void* vlist) ;
+int compare3(const void* vkey, const void* vlist) ;
+int compare4(const void* vkey, const void* vlist) ;
+int compareP(const void* vkey, const void* vlist) ;
+
+int (* compare )(const void *, const void *) ;
+
 void jumpHolesCreate( Bits_t * J ) ;
 
 size_t binomial( int N, int M ) ;
@@ -78,28 +107,25 @@ Searchstate_t nextDay( int day ) ;
 Searchstate_t calcMove( int day ) ;
 Searchstate_t calcMoveFinal( int day ) ;
 
-void makeStoredState() ;
-Bool_t findStoredStates( GM_t * g ) ;
+void makeStoredState( void ) ;
+Bool_t findStoredStates( void ) ;
 
 void showBits( Bits_t bb ) ;
 void showDoubleBits( Bits_t bb, Bits_t cc ) ;
 void showWin( void ) ;
 void showW( void ) ;
+void setupVictory() ;
 
 
 void jsonOut( void ) ;
 
-#include "victory.c"
 #include "getOpts.c"
 #include "showBits.c"
 #include "help.c"
 #include "validate.c"
 #include "jumpHolesCreate.c"
-#include "jsonOut.c"
 #include "status.c"
 #include "moves.c"
-#include "compare.c"
-#include "storedState.c"
 
 int main( int argc, char **argv )
 {
@@ -119,7 +145,7 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Starting search\n");
     }
-    Loc.iPossible = binomial( holes, visits );
+    Loc.iPossible = binomial( holes, visits ) + 1 ; // 0 index is no move
     if ( Loc.iPossible > Loc.free ) {
         // check memory although unlikely exhausted at this stage
         fprintf( stderr, "Memory exhaused from possible move list\n");
@@ -129,35 +155,48 @@ int main( int argc, char **argv )
     Loc.Sorted = Loc.Possible + Loc.iPossible ;
     Loc.free -= Loc.iPossible ;
     
+    memset( search_current.move, 0, sizeof( search_current.move ) ) ; // clear all moves 
+
 
     if (rigorous) {
-        search_elements = poison_plus ;
-        search_size = search_elements * sizeof( Bits_t ) ;
+        // game + roundup( (day+(poison-1) )/2 )
+        search_moves = poison_plus-1 ;
+        search_elements = 1 + ( 1 + poison_plus ) / 2 ;
+    } else {
+        // game + day+/-move
+        search_moves = 0;
+        search_elements = 2 ;
     }
+    search_size = search_elements * sizeof( Bits_t ) ;
 
-    switch ( search_elements ) {
-        case 1:
-            compare = compare1 ;
-            break ;
-        case 2:
-            compare = compare2 ;
-            break ;
-        case 3:
-            compare = compare3 ;
-            break ;
-        case 4:
-            compare = compare4 ;
-            break ;
-        case 5:
-            compare = compare4 ;
-            break ;
-        case 6:
-            compare = compare4 ;
-            break ;
-        default:
-            compare = compareP ;
-            break ;
+    if ( poison <2 ) {
+        // No moves included (no poison, or just a single day)
+        compare = compare0 ;
+    } else {
+        switch ( search_elements ) {
+            case 2:
+                // poison = 2;
+                compare = compare1 ;
+                break ;
+            case 3:
+                // poison = 3 or 4
+                compare = compare2 ;
+                break ;
+            case 4:
+                // poison = 5 or 6
+                compare = compare3 ;
+                break ;
+            case 5:
+                // poison = 7 or 8
+                compare = compare4 ;
+                break ;
+            default:
+                // poison > 6
+                compare = compareP ;
+                break ;
+        }
     }
+    printf("poison %d, poison_plus %d, search_moves %d, search_elements %d, search_size %d\n",poison,poison_plus,search_moves,search_elements,search_size);
 
     switch ( BisectionSearch() ) {
         case won:
@@ -191,14 +230,8 @@ int main( int argc, char **argv )
 void showWin( void ) {
     for ( int d = 0 ; d <= victoryDay ; ++d ) {
         printf("Day%3d Move ## Game \n",d);
-        showDoubleBits( victoryMove[d],victoryGame[d] ) ;
+        showDoubleBits( Loc.Possible[victoryMove[d]],victoryGame[d] ) ;
     }
-}
-void showW( void ) {
-    int vd = victoryDay ;
-    victoryDay = maxdays ;
-    showWin();
-    victoryDay = vd ;
 }
 
 Searchstate_t BisectionSearch( void )
@@ -335,7 +368,7 @@ Searchstate_t calcMove( int day ) {
 
     // clear moves
     Bits_t thisGame = victoryGame[day-1] ;
-    thisGame &= ~victoryMove[day] ;
+    thisGame &= ~Loc.Possible[victoryMove[day]] ;
 
     // calculate where they jump to
     Bits_t nextGame = Game_none ;
@@ -347,10 +380,10 @@ Searchstate_t calcMove( int day ) {
 
     // do poisoning
     for ( int p=0 ; p<poison ; ++p ) {
-        nextGame &= ~victoryMove[day-p] ;
+        nextGame &= ~Loc.Possible[victoryMove[day-p]] ;
     }
     victoryGame[day] = nextGame ;
-    //printf(" -> %lX\n",nextGame);
+    //printf("%lX -> %lX\n",thisGame,nextGame);
     
     // Victory? (No foxes or other goal in fixup backtracking mode)
     if ( nextGame == Game_none ) {
@@ -358,8 +391,12 @@ Searchstate_t calcMove( int day ) {
     }
 
     // Already seen?
-    victoryMove[day+1] = nextGame ;
-    if ( findStoredStates( victoryMove + day + 2 - search_elements ) == True ) {
+    search_current.game = nextGame ;
+    search_current.day = day ;
+    for ( int p=0; p<search_moves ; ++p ) {
+        search_current.move[p] = victoryMove[day-p] ;
+    }
+    if ( findStoredStates() == True ) {
         // game configuration already seen
         return retry ; // means try another move
     }
@@ -379,7 +416,7 @@ Searchstate_t calcMoveFinal( int day ) {
 
     // clear moves
     Bits_t thisGame = victoryGame[day-1] ;
-    thisGame &= ~victoryMove[day] ;
+    thisGame &= ~Loc.Possible[victoryMove[day]] ;
 
     // calculate where they jump to
     Bits_t nextGame = Game_none ;
@@ -391,7 +428,7 @@ Searchstate_t calcMoveFinal( int day ) {
 
     // do poisoning
     for ( int p=0 ; p<poison ; ++p ) {
-        nextGame &= ~victoryMove[day-p] ;
+        nextGame &= ~Loc.Possible[victoryMove[day-p]] ;
     }
     
     // Victory? (No foxes or other goal in fixup backtracking mode)
@@ -409,8 +446,10 @@ Searchstate_t firstDay( void ) {
 
     victoryGame[0] = Game_all ;
     victoryMove[0] = Game_none ; // temporary
-    victoryMove[1] = Game_all ; // temporary
-    findStoredStates( victoryMove +1 - search_elements ) ; // salt the sort array
+    
+    search_current.game = Game_all ;
+    search_current.day = 0 ;
+    findStoredStates() ; // salt the sort array
 
     switch ( nextDay( 1 ) ) {
         case won:
@@ -440,10 +479,11 @@ Searchstate_t nextDay( int day ) {
     // victoryGame is set for this day
     // Moves are tested for this day
     int ovrflw = 0 ;
-
     if ( day == maxdays ) {
-        for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-            victoryMove[ day ] = Loc.Possible[ip] ; // test move
+        for ( size_t ip=1 ; ip<Loc.iPossible ; ++ip ) { // each possible move -- ignore 0 index
+            //printf("Final day=%d ip=%lu\n",day,ip);
+            //victoryMove[ day ] = Loc.Possible[ip] ; // test move
+            victoryMove[ day ] = ip ; // test move
                     
             switch( calcMoveFinal( day ) ) {
                 case won:
@@ -473,8 +513,10 @@ Searchstate_t nextDay( int day ) {
         return overflow ;            
     }
 
-    for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
-        victoryMove[ day ] = Loc.Possible[ip] ; // test move
+    for ( size_t ip=1 ; ip<Loc.iPossible ; ++ip ) { // each possible move -- igmore 0 index
+        //printf("Intermediate day=%d ip=%lu\n",day,ip);
+        //victoryMove[ day ] = Loc.Possible[ip] ; // test move
+        victoryMove[ day ] = ip ; // test move
                 
         switch( calcMove( day ) ) {
             case won:
@@ -513,4 +555,178 @@ Searchstate_t nextDay( int day ) {
         }
     }
     return ovrflw ? overflow : backward ;
+}
+
+void setupVictory() {
+    // Set all bits and set up pre-computed arrays
+    Game_all = 0 ;
+    for ( int h=0 ; h<holes ; ++h ) {
+        setB( Game_all, h ) ;
+    }
+
+    for ( size_t d = 0 ; d < sizeof(victoryGame)/sizeof(victoryGame[0]) ; ++d ) {
+        victoryGame[d] = Game_all ;
+    }
+    
+    for ( size_t d = 0 ; d < sizeof(victoryMovePlus)/sizeof(victoryMovePlus[0]) ; ++d ) {
+        victoryMovePlus[d] = Game_none ;
+    }
+}
+
+#define QQ(x) "\"" #x "\"" 
+
+void jsonOut( void ) {
+    // output settings and moves
+    fprintf(jfile,"{");
+        fprintf(jfile, QQ(length)":%d,\n", xlength);
+        fprintf(jfile, QQ(width)":%d,\n",  ylength);
+        fprintf(jfile, QQ(visits)":%d,\n", visits );
+        fprintf(jfile, QQ(poison_days)":%d,\n", poison );
+        fprintf(jfile, QQ(connection)":"QQ(%s)",\n", connName(connection) );
+        fprintf(jfile, QQ(geometry)":"QQ(%s)",\n", geoName(geo) );
+        if ( victoryDay >= 0 ) {
+            fprintf(jfile, QQ(days)":%d,\n", victoryDay );
+            fprintf(jfile, QQ(moves)":[" ) ;
+                for ( int d=1; d<=victoryDay ; ++d ) {
+                    fprintf(jfile,"[");
+                    int v = 0 ;
+                    for ( int b=0 ; b<holes ; ++b ) {
+                        if ( getB(Loc.Possible[victoryMove[d]],b) ) {
+                            ++v ;
+                            fprintf(jfile,"%d%s",b,v==visits?"":",");
+                        }
+                    }
+                    fprintf(jfile,"]%s",d==victoryDay?"":",");
+                }
+            fprintf(jfile,"],\n") ;
+            fprintf(jfile, QQ(solved)":%s", "true" ); // last, no comma
+        } else {
+            fprintf(jfile, QQ(solved)":%s", "false" ); // last, no comma
+        }   
+    fprintf(jfile,"}\n");
+}
+
+#define COMPsetup const search_t * skey = vkey;\
+                  const search_t * slist = vlist;\
+                  register int diff = ( skey->game < slist->game ) - ( skey->game > slist->game ) ;\
+                  if ( diff ) return diff
+
+#define COMPfirst diff = ( skey->move[0] < slist->move[0] ) - ( skey->move[0] > slist->move[0] ) ;\
+                  if ( diff ) return diff
+
+#define COMPfull(n) diff = ( skey->full[n] < slist->full[n] ) - ( skey->full[n] > slist->full[n] ) ;\
+                  if ( diff ) return diff
+
+
+int compare0(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    return 0 ;
+}
+
+int compare1(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    COMPfirst ;
+    return 0 ;
+}
+
+int compare2(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    COMPfirst ;
+    COMPfull(1) ;
+    return 0 ;
+}
+
+int compare3(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    COMPfirst ;
+    COMPfull(1) ;
+    COMPfull(2) ;
+    return 0 ;
+}
+
+int compare4(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    COMPfirst ;
+    COMPfull(1) ;
+    COMPfull(2) ;
+    COMPfull(3) ;
+    return 0 ;
+}
+
+int compareP(const void* vkey, const void* vlist) {
+    COMPsetup ;
+    COMPfirst ;
+    COMPfull(1) ;
+    COMPfull(2) ;
+    COMPfull(3) ;
+    for ( int n = 6 ; n <= search_elements ; ++n ) {
+        COMPfull(n-2) ;
+    }
+    return 0 ;
+}
+
+void makeStoredState() {
+    // Loc.Sorted already set in premadeMovesCreate
+    // Basically there is a list of stored states ( game positions possibly including poisoned path )
+    // The list is sorted except the tail end that is unsorted for a linear search
+    // every so often, the unsorted is sorted back into sorted.
+    Loc.iSorted = 0 ;
+    Loc.Unsorted = Loc.Sorted + Loc.iSorted ;
+    Loc.iUnsorted = 0 ;
+    Loc.Next = Loc.Unsorted ;
+}
+
+Bool_t findStoredStates( void ) {
+    // actually tries to find --> returns True
+    // or adds to unsorted --> returns False
+    // might re-sort if threshold met
+    // aborts if no space
+
+    // fast binary search in sorted
+    search_t * found =  bsearch( &search_current, Loc.Sorted,    Loc.iSorted,   search_size, compare ) ;
+    if ( found ) {
+        //printf("Bsearch found %lX, %lX\n",found->game,found->full[0]);    
+        // a matching element -- test date
+        if ( found->day > search_current.day ) {
+            // later occurence so doesn't count
+            // but update occurence to this one -- no need to add or sort
+            found->day = search_current.day ;
+            return False ;
+        }
+        return True ;
+    }
+
+    // liner search in unsorted -- will add so need to keep track of size to see that
+    found = lfind( &search_current, Loc.Unsorted, &Loc.iUnsorted, search_size, compare ) ;
+    if ( found ) {
+        //printf("Lsearch found %lX, %lX\n",found->game,found->full[0]);    
+        // a matching element -- test date
+        if ( found->day > search_current.day ) {
+            // later occurence so doesn't count
+            // but update occurence to this one -- no need to add
+            found->day = search_current.day ;
+            return False ;
+        }
+        return True ;
+    }
+    
+    // add to unsorted, move counter and pointers
+    memcpy( Loc.Next, &search_current, search_size );
+    ++Loc.iUnsorted ;
+    Loc.Next += search_elements ;
+    
+    // See if need to move unsorted to sorted and check for enough space for next increment
+    if ( Loc.iUnsorted >= UNSORTSIZE ) { // move unsorted -> sorted
+        Loc.free -= Loc.iUnsorted * search_elements ;
+        if ( Loc.free <= (size_t) (UNSORTSIZE * search_elements) ) { // test if enough space
+            fprintf(stderr, "Memory exhausted adding games seen\n");
+            exit(1);
+        }
+        //printf("Sorting\n");
+        Loc.iSorted += Loc.iUnsorted ;
+        qsort( Loc.Sorted, Loc.iSorted, search_size, compare );
+        Loc.Unsorted = Loc.Next ;
+        Loc.iUnsorted = 0 ;
+    }
+    return False ;
 }

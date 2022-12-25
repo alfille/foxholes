@@ -180,7 +180,7 @@ int main( int argc, char **argv )
     if ( update ) {
         printf("Starting search\n");
     }
-    Loc.iPossible = binomial( holes, visits );
+    Loc.iPossible = binomial( holes, visits ) + 1 ; // 0-index is no move
     if ( Loc.iPossible > Loc.free ) {
         // check memory although unlikely exhausted at this stage
         fprintf( stderr, "Memory exhaused from possible move list\n");
@@ -418,7 +418,7 @@ void fixupDay( int Day ) {
     // find the move for this day
     GMM_t move[poison_plus+1] ;
     loadFromVictory( Day-1, move+1 ) ; // full poison days
-    for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+    for ( size_t ip=1 ; ip<Loc.iPossible ; ++ip ) { // each possible move -- ignore 0 index
         move[0] = victoryGame[ Day-1 ] ; // prior game position
         move[1] = Loc.Possible[ip] ; // test move
 
@@ -535,7 +535,7 @@ Searchstate_t primarySolveDay( int Day, Bits_t target ) {
         
         if ( victoryMove[Day] == Game_none ) { // no move specified
             // Search though all moves
-            for ( size_t ip=0 ; ip<Loc.iPossible ; ++ip ) { // each possible move
+            for ( size_t ip=1 ; ip<Loc.iPossible ; ++ip ) { // each possible move -- ignore 0 index
                 rgm2gmm[0] = thisGame ; // overwrites refer, essentially adds to start of movelist 
                 rgm2gmm[1]= Loc.Possible[ip] ; // actual move (and poisoning)
                 switch( calcMove( rgm2gmm, target ) ) {
