@@ -135,9 +135,6 @@ int main( int argc, char **argv )
     // Print final arguments
     printStatus(argv[0]);    
 
-    if ( update ) {
-        printf("Setting up moves\n");
-    }
     jumpHolesCreate(Loc.Jumps); // array of fox jump locations
     Loc.Possible = Loc.Jumps + holes ;
     Loc.free -= holes ;
@@ -196,13 +193,11 @@ int main( int argc, char **argv )
                 break ;
         }
     }
-    printf("poison %d, poison_plus %d, search_moves %d, search_elements %d, search_size %d\n",poison,poison_plus,search_moves,search_elements,search_size);
+    //printf("poison %d, poison_plus %d, search_moves %d, search_elements %d, search_size %d\n",poison,poison_plus,search_moves,search_elements,search_size);
 
     switch ( BisectionSearch() ) {
         case won:
-            printf("\n");
-            printf("Victory in %d days\n",victoryDay);
-            printf("Winning Strategy:\n");
+            printf("Winning Strategy (%d days):\n",victoryDay);
             showWin();
             break ;
         case lost:
@@ -210,8 +205,6 @@ int main( int argc, char **argv )
             printf("Not solved.\nUnwinnable game (with these settings)\n");
             break ;
         case overflow:
-            printf("\n");
-            printf("No solution within maximum %d days.\n",maxdays);
             break ;        
         default:
             fprintf(stderr,"Unknown error\n");
@@ -242,16 +235,13 @@ Searchstate_t BisectionSearch( void )
 
     while ( Bisector( found, &maxdays ) ) {
         setupVictory() ;
-        if ( update ) {
-            printf("Setting up game array\n");
-        }
+
         // reset stored state
         makeStoredState(); // bitmap of game layouts (to avoid revisiting)
     
         switch ( firstDay() ) {
             case won:
-                printf("\n");
-                printf("Victory in %d days\n",victoryDay);
+                printf("\tVictory in %d days\n",victoryDay);
                 for ( int d=0 ; d<=victoryDay ; ++d ) {
                     vG[d] = victoryGame[d];
                     vM[d] = victoryMove[d];
@@ -259,12 +249,11 @@ Searchstate_t BisectionSearch( void )
                 found = victoryDay ;
                 break ;
             case lost:
-                printf("Not solved.\nUnwinnable game (with these settings)\n");
+                printf("\tNot solved. Unwinnable game (with these settings)\n");
                 return lost ;
                 break ;
             case overflow:
-                printf("\n");
-                printf("No solution within maximum %d days.\n",maxdays);
+                printf("\tNo solution within %d days.\n",maxdays);
                 for ( int d=0 ; d<=victoryDay ; ++d ) {
                     victoryGame[d] = vG[d];
                     victoryMove[d] = vM[d];
@@ -308,19 +297,21 @@ Bool_t Bisector( int found, int * new_max )
     // found is solution day, or <1 for no solution
     // new_max is limit days to try, negative if no solution
     // Return True if more processing possible, else False
+
+    // Round up increments
     switch (Bisect.state) {
         case bi_initial:
             Bisect.known_bad = 0,
             Bisect.known_good = -1 ;
             Bisect.max = MaxDays,
-            Bisect.increment = holes / visits ;
+            Bisect.increment = (holes + visits - 1 ) / visits ;
             Bisect.state = bi_unbounded ;
             break ;
         case bi_unbounded:
             if ( found > 0 ) {
                 Bisect.state = bi_bounded ;
                 Bisect.known_good = found ;
-                Bisect.increment = (Bisect.known_good - Bisect.known_bad) / 2 ;
+                Bisect.increment = (Bisect.known_good - Bisect.known_bad +1) / 2 ;
             } else {
                 Bisect.known_bad = Bisect.current_max ;
                 Bisect.increment *= 2 ;
@@ -342,12 +333,18 @@ Bool_t Bisector( int found, int * new_max )
     if ( Bisect.increment < 1 ) {
         // no more -- either no solution (still unbounded), or solution is current limit
         *new_max = Bisect.known_good ;
-        printf( "F Bisect State=%d, good=%d, bad=%d, current=%d, increment=%d, max=%d\n",Bisect.state,Bisect.known_good,Bisect.known_bad,Bisect.current_max,Bisect.increment,Bisect.max); 
         return False ;
     } else {
         Bisect.current_max = Bisect.known_bad + Bisect.increment ;
         *new_max = Bisect.current_max ;
-        printf( "T Bisect State=%d, good=%d, bad=%d, current=%d, increment=%d, max=%d\n",Bisect.state,Bisect.known_good,Bisect.known_bad,Bisect.current_max,Bisect.increment,Bisect.max); 
+        switch ( Bisect.state ) {
+            case bi_bounded:
+                printf( "Search for solution in %d days. (Known to be %d to %d).\n",Bisect.current_max,Bisect.known_bad,Bisect.known_good);
+                break ;
+            default:
+                printf( "Search for solution in %d days. (Known to be greater than %d).\n",Bisect.current_max,Bisect.known_bad);
+                break ;
+            }
         return True ;
     }
 }        
